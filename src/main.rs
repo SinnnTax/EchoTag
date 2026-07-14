@@ -1,8 +1,14 @@
+use std::io::{ self, Result };
+use std::path::{ Path, PathBuf };
 use std::process::Command;
-use std::process::Output;
-use std::io::Result;
 
-fn download_youtube(url: String, cookies: Option<String>) -> Result<Output> {
+struct AudioDownload {
+    channel: String,
+    title: String,
+    file_path: PathBuf,
+}
+
+fn download_youtube_audio(url: &str, cookies_path: Option<&Path>) -> Result<AudioDownload> {
     let mut ytdlp = Command::new("yt-dlp");
 
     ytdlp.args([
@@ -23,23 +29,53 @@ fn download_youtube(url: String, cookies: Option<String>) -> Result<Output> {
         "after_move:filepath",
     ]);
 
-    if let Some(cookie) = cookies {
-        ytdlp.args(["--cookies", &cookie]);
+    if let Some(path) = cookies_path {
+        ytdlp.arg("--cookies").arg(path);
     }
 
     ytdlp.arg(url);
 
-    ytdlp.output()
+    let output = ytdlp.output()?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        return Err(
+            io::Error::new(
+                io::ErrorKind::TimedOut,
+                format!("yt-dlp failed ({}): {stderr}", output.status.code().unwrap_or(-1))
+            )
+        );
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let lines: Vec<&str> = stdout.lines().collect();
+
+    if lines.len() < 3 {
+        return Err(
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("Expected 3 lines of output, got {}", lines.len())
+            )
+        );
+    }
+
+    Ok(AudioDownload {
+        channel: lines[0].to_string(),
+        title: lines[1].to_string(),
+        file_path: PathBuf::from(lines[2]),
+    })
 }
 
 fn main() {
-    let result = download_youtube(
-        "https://youtu.be/eZtlb9eegj0".to_string(),
-        Some("D:\\rust.etc\\EchoTag\\cookies.txt".to_string())
-    );
+    let url = "https://youtu.be/eZtlb9eegj0";
+    let cookies = Some(Path::new("D:\\rust.etc\\EchoTag\\cookies.txt"));
 
-    match result {
-        Ok(output) => println!("{}", String::from_utf8_lossy(&output.stdout)),
-        Err(e) => eprintln!("Error: {}", e),
+    match download_youtube_audio(url, cookies) {
+        Ok(download) => {
+            println!("Channel: {}", download.channel);
+            println!("Title: {}", download.title);
+            println!("Saved to: {}", download.file_path.display());
+        }
+        Err(e) => eprintln!("Error: {e}"),
     }
 }
