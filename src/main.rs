@@ -1,6 +1,7 @@
-use std::io::{ self, Result };
+use std::io;
 use std::path::{ Path, PathBuf };
 use std::process::Command;
+use reqwest;
 
 struct AudioDownload {
     channel: String,
@@ -8,7 +9,9 @@ struct AudioDownload {
     file_path: PathBuf,
 }
 
-fn download_youtube_audio(url: &str, cookies_path: Option<&Path>) -> Result<AudioDownload> {
+struct Metadata {}
+
+fn download_youtube_audio(url: &str, cookies_path: Option<&Path>) -> io::Result<AudioDownload> {
     let mut ytdlp = Command::new("yt-dlp");
 
     ytdlp.args([
@@ -66,6 +69,15 @@ fn download_youtube_audio(url: &str, cookies_path: Option<&Path>) -> Result<Audi
     })
 }
 
+fn itunes_search(music: AudioDownload) -> Result<String, reqwest::Error> {
+    let itunes_endpoint = format!(
+        "https://itunes.apple.com/search?media=music&entity=song&limit=5&term={} {}",
+        music.channel,
+        music.title
+    );
+    Ok(reqwest::blocking::get(itunes_endpoint)?.text()?)
+}
+
 fn main() {
     let url = "https://youtu.be/eZtlb9eegj0";
     let cookies = Some(Path::new("D:\\rust.etc\\EchoTag\\cookies.txt"));
@@ -75,6 +87,8 @@ fn main() {
             println!("Channel: {}", download.channel);
             println!("Title: {}", download.title);
             println!("Saved to: {}", download.file_path.display());
+
+            println!("iTunes Result:\n{}", itunes_search(download).unwrap());
         }
         Err(e) => eprintln!("Error: {e}"),
     }
