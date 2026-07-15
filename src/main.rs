@@ -1,7 +1,6 @@
 use std::io;
 use std::path::{ Path, PathBuf };
 use std::process::Command;
-use reqwest;
 
 struct AudioDownload {
     channel: String,
@@ -61,10 +60,19 @@ fn download_youtube_audio(url: &str, cookies_path: Option<&Path>) -> io::Result<
             )
         );
     }
+    let channel = lines[0];
+    let title = lines[1];
 
+    let clean_channel = channel.split(',').next().unwrap_or(channel).trim();
+    let leftovers = ['-', ':', '|'];
+    let clean_title = title
+        .replace(clean_channel, "")
+        .trim_start_matches(leftovers)
+        .trim()
+        .to_string();
     Ok(AudioDownload {
-        channel: lines[0].to_string(),
-        title: lines[1].to_string(),
+        channel: clean_channel.to_string(),
+        title: clean_title,
         file_path: PathBuf::from(lines[2]),
     })
 }
@@ -88,7 +96,7 @@ fn main() {
             println!("Title: {}", download.title);
             println!("Saved to: {}", download.file_path.display());
 
-            println!("iTunes Result:\n{}", itunes_search(download).unwrap());
+            println!("iTunes Result:{}", itunes_search(download).unwrap());
         }
         Err(e) => eprintln!("Error: {e}"),
     }
