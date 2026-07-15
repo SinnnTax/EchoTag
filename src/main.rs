@@ -2,6 +2,10 @@ use std::io;
 use std::path::{ Path, PathBuf };
 use std::process::Command;
 use serde::Deserialize;
+use lofty::file::TaggedFileExt;
+use lofty::tag::{ Accessor, Tag, TagExt };
+use lofty::error::LoftyError;
+use lofty::config::WriteOptions;
 
 struct AudioDownload {
     channel: String,
@@ -112,6 +116,37 @@ fn itunes_search(music: &AudioDownload) -> Result<Vec<Metadata>, reqwest::Error>
     Ok(reqwest::blocking::get(itunes_endpoint)?.json::<ItunesResponse>()?.results)
 }
 
+fn write_metadata(metadata: &Metadata, path: &Path) -> Result<(), LoftyError> {
+    // read the file to determine its format to extract any existing tags
+    let mut tagged_file = lofty::read_from_path(path)?;
+
+    // get the primary tag for this specific file format
+    let tag = match tagged_file.primary_tag_mut() {
+        // if the file already has a primary tag (e.g., ID3v2 for MP3), use it
+        Some(primary_tag) => primary_tag,
+
+        None => {
+            // If no primary tag exists, ask lofty what the best tag type
+            // is for this file format, and create a new one
+            let tag_type = tagged_file.primary_tag_type();
+
+            tagged_file.insert_tag(Tag::new(tag_type));
+
+            // now that the new empty tag is inserted retrieve it for editing
+            tagged_file.primary_tag_mut().unwrap()
+        }
+    };
+
+    tag.set_artist(metadata.artist_name.clone());
+    tag.set_album(metadata.collection_name.clone());
+    tag.set_title(metadata.track_name.clone());
+    tag.set_genre(metadata.primary_genre.clone());
+
+    tag.save_to_path(path, WriteOptions::default())?;
+
+    Ok(())
+}
+
 fn main() {
     let url = "https://youtu.be/eZtlb9eegj0";
     let cookies = Some(Path::new("D:\\rust.etc\\EchoTag\\cookies.txt"));
@@ -136,6 +171,17 @@ fn main() {
                             println!("Album: {}", meta.collection_name);
                             println!("Genre: {}", meta.primary_genre);
                             println!("Artwork: {}", meta.artwork_url100);
+                        }
+
+                        match write_metadata(&results[0], &download.file_path) {
+                            Ok(_) =>
+                                println!("Metadata saved to {}.mp3 correctly.", download.title),
+                            Err(e) =>
+                                eprintln!(
+                                    "Failed to write metadata into {}.mp3: {}",
+                                    download.title,
+                                    e
+                                ),
                         }
                     }
                 }
