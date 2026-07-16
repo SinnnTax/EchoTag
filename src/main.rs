@@ -1,12 +1,11 @@
-use std::io;
 use std::path::{ Path, PathBuf };
 use std::process::Command;
 use serde::Deserialize;
 use lofty::file::TaggedFileExt;
 use lofty::tag::{ Accessor, Tag, TagExt };
-use lofty::error::LoftyError;
 use lofty::config::WriteOptions;
 use lofty::picture::{ MimeType, Picture, PictureType };
+use anyhow::{ Context, bail };
 
 struct AudioDownload {
     channel: String,
@@ -40,7 +39,7 @@ struct ItunesResponse {
     results: Vec<Metadata>,
 }
 
-fn download_youtube_audio(url: &str, cookies_path: Option<&Path>) -> io::Result<AudioDownload> {
+fn download_youtube_audio(url: &str, cookies_path: Option<&Path>) -> anyhow::Result<AudioDownload> {
     let mut ytdlp = Command::new("yt-dlp");
 
     ytdlp.args([
@@ -71,25 +70,18 @@ fn download_youtube_audio(url: &str, cookies_path: Option<&Path>) -> io::Result<
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-        return Err(
-            io::Error::new(
-                io::ErrorKind::TimedOut,
-                format!("yt-dlp failed ({}): {stderr}", output.status.code().unwrap_or(-1))
-            )
-        );
+        let error_msg = format!("yt-dlp failed ({}): {stderr}", output.status.code().unwrap_or(-1));
+        bail!(error_msg);
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let lines: Vec<&str> = stdout.lines().collect();
 
     if lines.len() < 3 {
-        return Err(
-            io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!("Expected 3 lines of output, got {}", lines.len())
-            )
-        );
+        let error_msg = format!("Expected 3 lines of output, got {}", lines.len());
+        bail!(error_msg);
     }
+
     let channel = lines[0];
     let title = lines[1];
 
@@ -100,6 +92,7 @@ fn download_youtube_audio(url: &str, cookies_path: Option<&Path>) -> io::Result<
         .trim_start_matches(leftovers)
         .trim()
         .to_string();
+
     Ok(AudioDownload {
         channel: clean_channel.to_string(),
         title: clean_title,
@@ -107,17 +100,23 @@ fn download_youtube_audio(url: &str, cookies_path: Option<&Path>) -> io::Result<
     })
 }
 
-fn itunes_search(music: &AudioDownload) -> Result<Vec<Metadata>, reqwest::Error> {
+fn itunes_search(music: &AudioDownload) -> anyhow::Result<Vec<Metadata>> {
     let itunes_endpoint = format!(
         "https://itunes.apple.com/search?media=music&entity=song&limit=5&term={} {}",
         music.channel,
         music.title
     );
 
-    Ok(reqwest::blocking::get(itunes_endpoint)?.json::<ItunesResponse>()?.results)
+    let results = reqwest::blocking
+        ::get(&itunes_endpoint)
+        .context("Failed to connect to iTunes API")?
+        .json::<ItunesResponse>()
+        .context("Failed to parse iTunes JSON response")?.results;
+
+    Ok(results)
 }
 
-fn write_metadata(metadata: &Metadata, path: &Path) -> Result<(), LoftyError> {
+fn write_metadata(metadata: &Metadata, path: &Path) -> anyhow::Result<()> {
     // read the file to determine its format to extract any existing tags
     let mut tagged_file = lofty::read_from_path(path)?;
 
@@ -146,13 +145,13 @@ fn write_metadata(metadata: &Metadata, path: &Path) -> Result<(), LoftyError> {
     let cover_at_path = format!("{}_{}.jpg", &metadata.artist_name, &metadata.track_name);
     let cover_art_path = Path::new(&cover_at_path);
 
-    download_cover_art(Some(cover_art_path), &metadata.artwork_url100).expect(
+    download_cover_art(Some(cover_art_path), &metadata.artwork_url100).context(
         "Failed to download cover art in write_metadata function."
-    );
+    )?;
 
     let cover_art = std::fs
         ::read(cover_art_path)
-        .expect(&format!("Failed to read {:?}", cover_art_path));
+        .with_context(|| format!("Failed to read {:?}", cover_art_path))?;
 
     let cover = Picture::unchecked(cover_art)
         .pic_type(PictureType::CoverFront)
@@ -166,15 +165,11 @@ fn write_metadata(metadata: &Metadata, path: &Path) -> Result<(), LoftyError> {
     Ok(())
 }
 
-fn download_cover_art(path: Option<&Path>, url: &str) -> Result<u64, reqwest::Error> {
+fn download_cover_art(path: Option<&Path>, url: &str) -> anyhow::Result<u64> {
     let path = path.unwrap_or(Path::new("cover_art.jpg"));
-    let mut file = match std::fs::File::create(path) {
-        Ok(handle) => handle,
-        Err(e) => {
-            eprintln!("Couldn't create {:?}: {e}", path);
-            panic!();
-        }
-    };
+    let mut file = std::fs::File
+        ::create(path)
+        .with_context(|| format!("Couldn't create {:?}", path))?;
 
     // change 100x100 to 2000x200 to get higher resolution picture
     let url = url.replace("100", "2000");
@@ -182,55 +177,43 @@ fn download_cover_art(path: Option<&Path>, url: &str) -> Result<u64, reqwest::Er
     Ok(
         reqwest::blocking
             ::get(&url)
-            .expect(&format!("Couldn't connect to {}!", &url))
+            .with_context(|| format!("Couldn't connect to {}!", &url))?
             .copy_to(&mut file)?
     )
 }
 
-fn main() {
+fn main() -> anyhow::Result<()> {
     let url = "https://youtu.be/eZtlb9eegj0";
     let cookies = Some(Path::new("D:\\rust.etc\\EchoTag\\cookies.txt"));
 
-    match download_youtube_audio(url, cookies) {
-        Ok(download) => {
-            println!("Channel: {}", download.channel);
-            println!("Title: {}", download.title);
-            println!("Saved to: {}", download.file_path.display());
+    let download = download_youtube_audio(url, cookies)?;
 
-            match itunes_search(&download) {
-                Ok(results) => {
-                    if results.is_empty() {
-                        println!("iTunes returned 0 results.");
-                    } else {
-                        println!("iTunes found {} result(s):", results.len());
+    println!("Channel: {}", download.channel);
+    println!("Title: {}", download.title);
+    println!("Saved to: {}", download.file_path.display());
 
-                        for (i, meta) in results.iter().enumerate() {
-                            println!("\n--- Result #{} ---", i + 1);
-                            println!("Track: {}", meta.track_name);
-                            println!("Artist: {}", meta.artist_name);
-                            println!("Album: {}", meta.collection_name);
-                            println!("Genre: {}", meta.primary_genre);
-                            println!("Artwork: {}", meta.artwork_url100);
-                        }
+    let results = itunes_search(&download)?;
 
-                        match write_metadata(&results[0], &download.file_path) {
-                            Ok(_) =>
-                                println!(
-                                    "Metadata including cover art saved to {}.mp3 correctly.",
-                                    download.title
-                                ),
-                            Err(e) =>
-                                eprintln!(
-                                    "Failed to write metadata into {}.mp3: {}",
-                                    download.title,
-                                    e
-                                ),
-                        }
-                    }
-                }
-                Err(e) => eprintln!("iTunes request failed: {e}"),
-            }
-        }
-        Err(e) => eprintln!("Error: {e}"),
+    if results.is_empty() {
+        println!("iTunes returned 0 results.");
+        return Ok(());
     }
+
+    println!("iTunes found {} result(s):", results.len());
+    for (i, meta) in results.iter().enumerate() {
+        println!("\n--- Result #{} ---", i + 1);
+        println!("Track: {}", meta.track_name);
+        println!("Artist: {}", meta.artist_name);
+        println!("Album: {}", meta.collection_name);
+        println!("Genre: {}", meta.primary_genre);
+        println!("Artwork: {}", meta.artwork_url100);
+    }
+
+    write_metadata(&results[0], &download.file_path).context(
+        "Failed to write metadata to the downloaded file"
+    )?;
+
+    println!("Metadata including cover art saved to {} correctly.", download.title);
+
+    Ok(())
 }
