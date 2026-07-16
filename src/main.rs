@@ -150,7 +150,9 @@ fn write_metadata(metadata: &Metadata, path: &Path) -> Result<(), LoftyError> {
         "Failed to download cover art in write_metadata function."
     );
 
-    let cover_art = std::fs::read(cover_art_path).expect("Faild to read {cover_art_path:?}");
+    let cover_art = std::fs
+        ::read(cover_art_path)
+        .expect(&format!("Failed to read {:?}", cover_art_path));
 
     let cover = Picture::unchecked(cover_art)
         .pic_type(PictureType::CoverFront)
