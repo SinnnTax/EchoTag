@@ -28,12 +28,9 @@ struct ItunesResponse {
     results: Vec<Metadata>,
 }
 
-pub fn itunes_search(music: &AudioDownload) -> anyhow::Result<Vec<Metadata>> {
-    let itunes_endpoint = format!(
-        "https://itunes.apple.com/search?media=music&entity=song&limit=5&term={} {}",
-        music.channel,
-        music.title
-    );
+fn itunes_search(query: &str) -> anyhow::Result<Vec<Metadata>> {
+    let itunes_endpoint =
+        format!("https://itunes.apple.com/search?media=music&entity=song&limit=5&term={}", query);
 
     let results = reqwest::blocking
         ::get(&itunes_endpoint)
@@ -42,4 +39,31 @@ pub fn itunes_search(music: &AudioDownload) -> anyhow::Result<Vec<Metadata>> {
         .context("Failed to parse iTunes JSON response")?.results;
 
     Ok(results)
+}
+
+pub fn find_metadata(music: &AudioDownload) -> anyhow::Result<Vec<Metadata>> {
+    let mut query = format!("{} {}", music.channel, music.title);
+
+    for _ in 0..7 {
+        let results = itunes_search(&query)?;
+
+        // if we got results return them immediately
+        if !results.is_empty() {
+            return Ok(results);
+        }
+
+        // if no results then try to chop off the last word
+        match query.rfind(' ') {
+            Some(index) => {
+                query.truncate(index);
+                query = query.trim().to_string();
+            }
+            None => {
+                // no spaces left to shorten anymore
+                break;
+            }
+        }
+    }
+
+    Ok(Vec::new())
 }
