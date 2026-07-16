@@ -58,7 +58,7 @@ pub fn download_youtube_audio(
     let title = lines[1];
 
     let clean_channel = channel.split(',').next().unwrap_or(channel).trim();
-    let leftovers = ['-', ':', '|'];
+    let leftovers = ['-', ':', '|', ' '];
     let clean_title = title
         .replace(clean_channel, "")
         .trim_start_matches(leftovers)
