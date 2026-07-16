@@ -7,7 +7,7 @@ use anyhow::Context;
 use clap::Parser;
 use youtube::download_youtube_audio;
 use itunes::find_metadata;
-use tagger::write_metadata;
+use tagger::{ write_metadata, rename_audio_file };
 
 fn main() -> anyhow::Result<()> {
     let cli = cli::Cli::parse();
@@ -31,6 +31,10 @@ fn main() -> anyhow::Result<()> {
 
                 write_metadata(&results[0], &download.file_path).context(
                     "Failed to write metadata to the downloaded file"
+                )?;
+
+                rename_audio_file(&download.file_path, &results[0]).with_context(||
+                    format!("Failed to rename {:?}", &download.file_path)
                 )?;
 
                 println!("Successfully tagged: {}", download.title);

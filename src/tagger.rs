@@ -71,3 +71,21 @@ fn download_cover_art(path: Option<&Path>, url: &str) -> anyhow::Result<u64> {
             .copy_to(&mut file)?
     )
 }
+
+pub fn rename_audio_file(old_path: &Path, metadata: &Metadata) -> anyhow::Result<()> {
+    let new_file_name = format!(
+        "{} - {} - ({}).mp3",
+        metadata.artist_name,
+        metadata.track_name,
+        metadata.collection_name
+    );
+
+    // if old_path is absolute, so the new_path should too
+    let parent_dir = old_path
+        .parent()
+        .context("Could not determine parent directory of the downloaded file")?;
+
+    let new_path = parent_dir.join(new_file_name);
+
+    Ok(std::fs::rename(old_path, &new_path)?)
+}
