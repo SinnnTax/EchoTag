@@ -6,6 +6,7 @@ use lofty::file::TaggedFileExt;
 use lofty::tag::{ Accessor, Tag, TagExt };
 use lofty::error::LoftyError;
 use lofty::config::WriteOptions;
+use lofty::picture::{ MimeType, Picture, PictureType };
 
 struct AudioDownload {
     channel: String,
@@ -142,6 +143,22 @@ fn write_metadata(metadata: &Metadata, path: &Path) -> Result<(), LoftyError> {
     tag.set_title(metadata.track_name.clone());
     tag.set_genre(metadata.primary_genre.clone());
 
+    let cover_at_path = format!("{}_{}.jpg", &metadata.artist_name, &metadata.track_name);
+    let cover_art_path = Path::new(&cover_at_path);
+
+    download_cover_art(Some(cover_art_path), &metadata.artwork_url100).expect(
+        "Failed to download cover art in write_metadata function."
+    );
+
+    let cover_art = std::fs::read(cover_art_path).expect("Faild to read {cover_art_path:?}");
+
+    let cover = Picture::unchecked(cover_art)
+        .pic_type(PictureType::CoverFront)
+        .mime_type(MimeType::Jpeg)
+        .build();
+
+    tag.set_picture(0, cover);
+
     tag.save_to_path(path, WriteOptions::default())?;
 
     Ok(())
@@ -196,21 +213,16 @@ fn main() {
 
                         match write_metadata(&results[0], &download.file_path) {
                             Ok(_) =>
-                                println!("Metadata saved to {}.mp3 correctly.", download.title),
+                                println!(
+                                    "Metadata including cover art saved to {}.mp3 correctly.",
+                                    download.title
+                                ),
                             Err(e) =>
                                 eprintln!(
                                     "Failed to write metadata into {}.mp3: {}",
                                     download.title,
                                     e
                                 ),
-                        }
-
-                        match download_cover_art(None, &results[0].artwork_url100) {
-                            Ok(bytes_wrote) =>
-                                println!(
-                                    "{bytes_wrote} bytes wrote at cover_art.jpg successfully."
-                                ),
-                            Err(e) => eprintln!("Downloading cover art failed: {e}"),
                         }
                     }
                 }
