@@ -147,6 +147,27 @@ fn write_metadata(metadata: &Metadata, path: &Path) -> Result<(), LoftyError> {
     Ok(())
 }
 
+fn download_cover_art(path: Option<&Path>, url: &str) -> Result<u64, reqwest::Error> {
+    let path = path.unwrap_or(Path::new("cover_art.jpg"));
+    let mut file = match std::fs::File::create(path) {
+        Ok(handle) => handle,
+        Err(e) => {
+            eprintln!("Couldn't create {:?}: {e}", path);
+            panic!();
+        }
+    };
+
+    // change 100x100 to 2000x200 to get higher resolution picture
+    let url = url.replace("100", "2000");
+
+    Ok(
+        reqwest::blocking
+            ::get(&url)
+            .expect(&format!("Couldn't connect to {}!", &url))
+            .copy_to(&mut file)?
+    )
+}
+
 fn main() {
     let url = "https://youtu.be/eZtlb9eegj0";
     let cookies = Some(Path::new("D:\\rust.etc\\EchoTag\\cookies.txt"));
@@ -182,6 +203,14 @@ fn main() {
                                     download.title,
                                     e
                                 ),
+                        }
+
+                        match download_cover_art(None, &results[0].artwork_url100) {
+                            Ok(bytes_wrote) =>
+                                println!(
+                                    "{bytes_wrote} bytes wrote at cover_art.jpg successfully."
+                                ),
+                            Err(e) => eprintln!("Downloading cover art failed: {e}"),
                         }
                     }
                 }
