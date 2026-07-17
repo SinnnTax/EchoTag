@@ -7,6 +7,7 @@ mod models;
 
 use anyhow::Context;
 use clap::Parser;
+use tokio::task::JoinSet;
 use youtube::download_youtube_audio;
 use itunes::ItunesProvider;
 use tagger::{ write_metadata, rename_audio_file };
@@ -18,30 +19,43 @@ async fn main() -> anyhow::Result<()> {
 
     match cli.command {
         cli::Command::Download { urls, cookies } => {
+            let mut set: JoinSet<anyhow::Result<()>> = JoinSet::new();
+
             for url in urls {
-                println!("Starting download for: {}", url);
+                let cookies = cookies.clone();
 
-                let download = download_youtube_audio(&url, Some(&cookies)).await?;
+                set.spawn(async move {
+                    println!("Starting download for: {}", url);
 
-                println!("Channel: {}", download.channel);
-                println!("Title: {}", download.title);
+                    let download = download_youtube_audio(&url, Some(&cookies)).await?;
 
-                let results = ItunesProvider.find_metadata(&download).await?;
+                    println!("Channel: {}", download.channel);
+                    println!("Title: {}", download.title);
 
-                if results.is_empty() {
-                    println!("iTunes returned 0 results for {}.", url);
-                    continue; // skip writing metadata
-                }
+                    let results = ItunesProvider.find_metadata(&download).await?;
 
-                write_metadata(&results[0], &download.file_path).await.context(
-                    "Failed to write metadata to the downloaded file"
-                )?;
+                    if results.is_empty() {
+                        println!("iTunes returned 0 results for {}", url);
+                        return Ok(());
+                    }
 
-                rename_audio_file(&download.file_path, &results[0]).await.with_context(||
-                    format!("Failed to rename {:?}", &download.file_path)
-                )?;
+                    write_metadata(&results[0], &download.file_path).await.context(
+                        "Failed to write metadata to the downloaded file"
+                    )?;
 
-                println!("Successfully tagged: {}", download.title);
+                    rename_audio_file(&download.file_path, &results[0]).await.with_context(||
+                        format!("Failed to rename {:?}", &download.file_path)
+                    )?;
+
+                    println!("Successfully tagged: {}", download.title);
+
+                    Ok(())
+                });
+            }
+
+            // this loop ensures main doesn't exit until all downloads are done.
+            while let Some(res) = set.join_next().await {
+                res??;
             }
         }
         cli::Command::Update { paths } => {
