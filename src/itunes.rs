@@ -45,14 +45,14 @@ struct ItunesResponse {
 }
 
 impl MetadataProvider for ItunesProvider {
-    fn search(&self, query: &str) -> anyhow::Result<Vec<Metadata>> {
+    async fn search(&self, query: &str) -> anyhow::Result<Vec<Metadata>> {
         let itunes_endpoint =
             format!("https://itunes.apple.com/search?media=music&entity=song&limit=5&term={}", query);
 
-        let response = reqwest::blocking
-            ::get(&itunes_endpoint)
+        let response = reqwest
+            ::get(&itunes_endpoint).await
             .context("Failed to connect to iTunes API")?
-            .json::<ItunesResponse>()
+            .json::<ItunesResponse>().await
             .context("Failed to parse iTunes JSON response")?.results;
 
         // converts Vec<ItunesTrack> into Vec<Metadata>

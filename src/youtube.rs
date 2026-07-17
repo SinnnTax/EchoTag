@@ -1,9 +1,9 @@
 use std::path::{ Path, PathBuf };
-use std::process::Command;
 use anyhow::bail;
+use tokio::process::Command;
 use crate::models::AudioDownload;
 
-pub fn download_youtube_audio(
+pub async fn download_youtube_audio(
     url: &str,
     cookies_path: Option<&Path>
 ) -> anyhow::Result<AudioDownload> {
@@ -33,7 +33,7 @@ pub fn download_youtube_audio(
 
     ytdlp.arg(url);
 
-    let output = ytdlp.output()?;
+    let output = ytdlp.output().await?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).to_string();

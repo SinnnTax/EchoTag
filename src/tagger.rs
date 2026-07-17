@@ -4,9 +4,10 @@ use lofty::tag::{ Accessor, Tag, TagExt };
 use lofty::config::WriteOptions;
 use lofty::picture::{ MimeType, Picture, PictureType };
 use anyhow::Context;
+use tokio::io::AsyncWriteExt;
 use crate::models::Metadata;
 
-pub fn write_metadata(metadata: &Metadata, path: &Path) -> anyhow::Result<()> {
+pub async fn write_metadata(metadata: &Metadata, path: &Path) -> anyhow::Result<()> {
     // read the file to determine its format to extract any existing tags
     let mut tagged_file = lofty::read_from_path(path)?;
 
@@ -35,12 +36,12 @@ pub fn write_metadata(metadata: &Metadata, path: &Path) -> anyhow::Result<()> {
     let cover_at_path = format!("{}_{}.jpg", &metadata.artist_name, &metadata.track_name);
     let cover_art_path = Path::new(&cover_at_path);
 
-    download_cover_art(Some(cover_art_path), &metadata.artwork_url).context(
+    download_cover_art(Some(cover_art_path), &metadata.artwork_url).await.context(
         "Failed to download cover art in write_metadata function."
     )?;
 
-    let cover_art = std::fs
-        ::read(cover_art_path)
+    let cover_art = tokio::fs
+        ::read(cover_art_path).await
         .with_context(|| format!("Failed to read {:?}", cover_art_path))?;
 
     let cover = Picture::unchecked(cover_art)
@@ -55,24 +56,28 @@ pub fn write_metadata(metadata: &Metadata, path: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn download_cover_art(path: Option<&Path>, url: &str) -> anyhow::Result<u64> {
+async fn download_cover_art(path: Option<&Path>, url: &str) -> anyhow::Result<()> {
     let path = path.unwrap_or(Path::new("cover_art.jpg"));
-    let mut file = std::fs::File
-        ::create(path)
-        .with_context(|| format!("Couldn't create {:?}", path))?;
 
     // change 100x100 to 2000x200 to get higher resolution picture
     let url = url.replace("100", "2000");
 
-    Ok(
-        reqwest::blocking
-            ::get(&url)
-            .with_context(|| format!("Couldn't connect to {}!", &url))?
-            .copy_to(&mut file)?
-    )
+    let bytes = reqwest
+        ::get(&url).await
+        .with_context(|| format!("Couldn't connect to {}!", &url))?
+        .bytes().await
+        .with_context(|| format!("Failed to download cover art from {}", url))?;
+
+    let mut file = tokio::fs::File
+        ::create(path).await
+        .with_context(|| format!("Couldn't create {:?}", path))?;
+
+    file.write_all(&bytes).await.context("Failed to write bytes to file")?;
+
+    Ok(())
 }
 
-pub fn rename_audio_file(old_path: &Path, metadata: &Metadata) -> anyhow::Result<()> {
+pub async fn rename_audio_file(old_path: &Path, metadata: &Metadata) -> anyhow::Result<()> {
     let new_file_name = format!(
         "{} - {} - ({}).mp3",
         metadata.artist_name,
@@ -87,5 +92,11 @@ pub fn rename_audio_file(old_path: &Path, metadata: &Metadata) -> anyhow::Result
 
     let new_path = parent_dir.join(new_file_name);
 
-    Ok(std::fs::rename(old_path, &new_path)?)
+    tokio::fs
+        ::rename(old_path, &new_path).await
+        .with_context(||
+            format!("Couldn rename {} to {}", old_path.display(), new_path.display())
+        )?;
+
+    Ok(())
 }
