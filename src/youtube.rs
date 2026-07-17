@@ -1,12 +1,7 @@
 use std::path::{ Path, PathBuf };
 use std::process::Command;
 use anyhow::bail;
-
-pub struct AudioDownload {
-    pub channel: String,
-    pub title: String,
-    pub file_path: PathBuf,
-}
+use crate::models::AudioDownload;
 
 pub fn download_youtube_audio(
     url: &str,

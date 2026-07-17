@@ -1,5 +1,4 @@
-use crate::youtube::AudioDownload;
-use crate::models::Metadata;
+use crate::models::{ Metadata, AudioDownload };
 
 pub trait MetadataProvider {
     fn search(&self, query: &str) -> anyhow::Result<Vec<Metadata>>;
