@@ -2,12 +2,15 @@ mod youtube;
 mod itunes;
 mod tagger;
 mod cli;
+mod metadata_provider;
+mod models;
 
 use anyhow::Context;
 use clap::Parser;
 use youtube::download_youtube_audio;
-use itunes::find_metadata;
+use itunes::ItunesProvider;
 use tagger::{ write_metadata, rename_audio_file };
+use metadata_provider::MetadataProvider;
 
 fn main() -> anyhow::Result<()> {
     let cli = cli::Cli::parse();
@@ -22,7 +25,7 @@ fn main() -> anyhow::Result<()> {
                 println!("Channel: {}", download.channel);
                 println!("Title: {}", download.title);
 
-                let results = find_metadata(&download)?;
+                let results = ItunesProvider.find_metadata(&download)?;
 
                 if results.is_empty() {
                     println!("iTunes returned 0 results for {}.", url);

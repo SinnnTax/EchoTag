@@ -1,23 +1,39 @@
 use serde::Deserialize;
-use crate::youtube::AudioDownload;
 use anyhow::Context;
+use crate::models::Metadata;
+use crate::metadata_provider::MetadataProvider;
 
+pub struct ItunesProvider;
+
+// DTO for making Metadata domain model later
 #[derive(Deserialize)]
-pub struct Metadata {
+struct ItunesTrack {
     #[serde(rename(deserialize = "artistName"))]
-    pub artist_name: String,
+    artist_name: String,
 
     #[serde(rename(deserialize = "collectionName"))]
-    pub collection_name: String,
+    collection_name: String,
 
     #[serde(rename(deserialize = "trackName"))]
-    pub track_name: String,
+    track_name: String,
 
     #[serde(rename(deserialize = "artworkUrl100"))]
-    pub artwork_url100: String,
+    artwork_url100: String,
 
     #[serde(rename(deserialize = "primaryGenreName"))]
-    pub primary_genre: String,
+    primary_genre: String,
+}
+
+impl From<ItunesTrack> for Metadata {
+    fn from(track: ItunesTrack) -> Self {
+        Metadata {
+            artist_name: track.artist_name,
+            collection_name: track.collection_name,
+            track_name: track.track_name,
+            artwork_url: track.artwork_url100,
+            primary_genre: track.primary_genre,
+        }
+    }
 }
 
 // the iTunes API wraps the array of songs inside an outer object so
@@ -25,45 +41,26 @@ pub struct Metadata {
 // extract the 'results' array inside.
 #[derive(Deserialize)]
 struct ItunesResponse {
-    results: Vec<Metadata>,
+    results: Vec<ItunesTrack>,
 }
 
-fn itunes_search(query: &str) -> anyhow::Result<Vec<Metadata>> {
-    let itunes_endpoint =
-        format!("https://itunes.apple.com/search?media=music&entity=song&limit=5&term={}", query);
+impl MetadataProvider for ItunesProvider {
+    fn search(&self, query: &str) -> anyhow::Result<Vec<Metadata>> {
+        let itunes_endpoint =
+            format!("https://itunes.apple.com/search?media=music&entity=song&limit=5&term={}", query);
 
-    let results = reqwest::blocking
-        ::get(&itunes_endpoint)
-        .context("Failed to connect to iTunes API")?
-        .json::<ItunesResponse>()
-        .context("Failed to parse iTunes JSON response")?.results;
+        let response = reqwest::blocking
+            ::get(&itunes_endpoint)
+            .context("Failed to connect to iTunes API")?
+            .json::<ItunesResponse>()
+            .context("Failed to parse iTunes JSON response")?.results;
 
-    Ok(results)
-}
+        // converts Vec<ItunesTrack> into Vec<Metadata>
+        let results = response
+            .into_iter()
+            .map(|track| track.into())
+            .collect();
 
-pub fn find_metadata(music: &AudioDownload) -> anyhow::Result<Vec<Metadata>> {
-    let mut query = format!("{} {}", music.channel, music.title);
-
-    for _ in 0..7 {
-        let results = itunes_search(&query)?;
-
-        // if we got results return them immediately
-        if !results.is_empty() {
-            return Ok(results);
-        }
-
-        // if no results then try to chop off the last word
-        match query.rfind(' ') {
-            Some(index) => {
-                query.truncate(index);
-                query = query.trim().to_string();
-            }
-            None => {
-                // no spaces left to shorten anymore
-                break;
-            }
-        }
+        Ok(results)
     }
-
-    Ok(Vec::new())
 }

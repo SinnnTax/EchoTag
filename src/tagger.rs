@@ -4,7 +4,7 @@ use lofty::tag::{ Accessor, Tag, TagExt };
 use lofty::config::WriteOptions;
 use lofty::picture::{ MimeType, Picture, PictureType };
 use anyhow::Context;
-use crate::itunes::Metadata;
+use crate::models::Metadata;
 
 pub fn write_metadata(metadata: &Metadata, path: &Path) -> anyhow::Result<()> {
     // read the file to determine its format to extract any existing tags
@@ -35,7 +35,7 @@ pub fn write_metadata(metadata: &Metadata, path: &Path) -> anyhow::Result<()> {
     let cover_at_path = format!("{}_{}.jpg", &metadata.artist_name, &metadata.track_name);
     let cover_art_path = Path::new(&cover_at_path);
 
-    download_cover_art(Some(cover_art_path), &metadata.artwork_url100).context(
+    download_cover_art(Some(cover_art_path), &metadata.artwork_url).context(
         "Failed to download cover art in write_metadata function."
     )?;
 
