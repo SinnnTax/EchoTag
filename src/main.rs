@@ -4,7 +4,9 @@ mod tagger;
 mod cli;
 mod metadata_provider;
 mod models;
+mod proxy;
 
+use std::path::Path;
 use anyhow::Context;
 use clap::Parser;
 use tokio::task::JoinSet;
@@ -12,6 +14,7 @@ use youtube::download_youtube_audio;
 use itunes::ItunesProvider;
 use tagger::{ write_metadata, rename_audio_file };
 use metadata_provider::MetadataProvider;
+use proxy::{ filter_proxy, get_proxy };
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -62,6 +65,13 @@ async fn main() -> anyhow::Result<()> {
             println!("Updating for {paths:?}");
         }
     }
+
+    get_proxy(
+        "https://raw.githubusercontent.com/iplocate/free-proxy-list/refs/heads/main/protocols/https.txt",
+        Path::new("proxy.txt")
+    ).await?;
+
+    filter_proxy(Path::new("proxy.txt"), Path::new("filtered_proxy.txt")).await?;
 
     Ok(())
 }
