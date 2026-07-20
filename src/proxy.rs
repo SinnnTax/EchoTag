@@ -4,10 +4,20 @@ use tokio::io::AsyncWriteExt;
 use std::time::{ Duration, Instant };
 use tokio::task::JoinSet;
 
-const TEST_URL: &str = "https://www.youtube.com";
+#[allow(dead_code)]
+#[derive(Clone)]
+pub enum ProxyType {
+    HTTP,
+    SOCKS5,
+    SOCKS4,
+}
 
+#[allow(dead_code)]
+const TEST_URL: &str = "https://www.youtube.com";
+#[allow(dead_code)]
 const TIMEOUT: Duration = Duration::from_secs(5);
 
+#[allow(dead_code)]
 pub async fn get_proxy(url: &str, path: &Path) -> anyhow::Result<()> {
     let bytes = reqwest
         ::get(url).await
@@ -24,7 +34,8 @@ pub async fn get_proxy(url: &str, path: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub async fn filter_proxy(from: &Path, to: &Path) -> Result<()> {
+#[allow(dead_code)]
+pub async fn filter_proxy(from: &Path, to: &Path, proxy_type: ProxyType) -> Result<()> {
     let content = tokio::fs
         ::read_to_string(from).await
         .with_context(|| format!("Failed to read {}", from.display()))?;
@@ -39,8 +50,9 @@ pub async fn filter_proxy(from: &Path, to: &Path) -> Result<()> {
     let mut tasks = JoinSet::new();
 
     for proxy in proxies {
+        let proxy_type = proxy_type.clone();
         tasks.spawn(async move {
-            let result = test_proxy(&proxy).await;
+            let result = test_proxy(&proxy, proxy_type).await;
             (proxy, result)
         });
     }
@@ -67,8 +79,26 @@ pub async fn filter_proxy(from: &Path, to: &Path) -> Result<()> {
     Ok(())
 }
 
-async fn test_proxy(proxy: &str) -> Result<u64> {
-    let proxy_url = format!("http://{}", proxy);
+#[allow(dead_code)]
+async fn test_proxy(proxy: &str, proxy_type: ProxyType) -> Result<u64> {
+    let mut proxy_url = String::from(proxy);
+    match proxy_type {
+        ProxyType::HTTP => {
+            if !proxy.starts_with("http://") {
+                proxy_url = format!("http://{}", proxy);
+            }
+        }
+        ProxyType::SOCKS4 => {
+            if !proxy.starts_with("socks4://") {
+                proxy_url = format!("socks4://{}", proxy);
+            }
+        }
+        ProxyType::SOCKS5 => {
+            if !proxy.starts_with("socks5://") {
+                proxy_url = format!("socks5://{}", proxy);
+            }
+        }
+    }
 
     let client = reqwest::Client
         ::builder()

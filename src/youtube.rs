@@ -5,7 +5,8 @@ use crate::models::AudioDownload;
 
 pub async fn download_youtube_audio(
     url: &str,
-    cookies_path: Option<&Path>
+    cookies_path: Option<&Path>,
+    proxy: Option<&str>
 ) -> anyhow::Result<AudioDownload> {
     let mut ytdlp = Command::new("yt-dlp");
 
@@ -19,6 +20,10 @@ pub async fn download_youtube_audio(
         "%(title)s.%(ext)s",
         "-q",
         "--force-ipv4",
+        "--retries",
+        "1",
+        "--socket-timeout",
+        "3",
         "--print",
         "%(channel)s",
         "--print",
@@ -29,6 +34,10 @@ pub async fn download_youtube_audio(
 
     if let Some(path) = cookies_path {
         ytdlp.arg("--cookies").arg(path);
+    }
+
+    if let Some(p) = proxy {
+        ytdlp.arg("--proxy").arg(p);
     }
 
     ytdlp.arg(url);
