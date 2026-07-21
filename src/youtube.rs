@@ -7,7 +7,7 @@ use tokio::io::{ BufReader, AsyncBufReadExt };
 use regex::Regex;
 use crate::models::{ AudioDownload, DownloadEvent, DownloadEventStream };
 
-pub async fn download_youtube_audio(
+pub fn download_youtube_audio(
     url: String,
     cookies_path: Option<PathBuf>,
     proxy: Option<String>

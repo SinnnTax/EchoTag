@@ -100,7 +100,7 @@ pub async fn rename_audio_file(old_path: &Path, metadata: &Metadata) -> anyhow::
         .parent()
         .context("Could not determine parent directory of the downloaded file")?;
 
-    let new_path = parent_dir.join(sanitize_filename(&new_file_name).await);
+    let new_path = parent_dir.join(sanitize_filename(&new_file_name));
 
     tokio::fs
         ::rename(old_path, &new_path).await
@@ -111,7 +111,7 @@ pub async fn rename_audio_file(old_path: &Path, metadata: &Metadata) -> anyhow::
     Ok(())
 }
 
-async fn sanitize_filename(name: &str) -> String {
+fn sanitize_filename(name: &str) -> String {
     name.chars()
         .map(|c| {
             match c {

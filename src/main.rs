@@ -32,7 +32,7 @@ async fn main() -> anyhow::Result<()> {
 
                 let cookies = cookies.clone();
                 let download_start = std::time::Instant::now();
-                let mut stream = download_youtube_audio(url.to_string(), Some(cookies), None).await;
+                let mut stream = download_youtube_audio(url.to_string(), Some(cookies), None);
 
                 let bar = mp.add(ProgressBar::new(1));
                 bar.set_style(
