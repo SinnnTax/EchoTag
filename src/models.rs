@@ -1,5 +1,5 @@
 use std::path::PathBuf;
-
+use tokio::sync::mpsc;
 #[derive(Clone)]
 pub struct Metadata {
     pub artist_name: String,
@@ -14,4 +14,20 @@ pub struct AudioDownload {
     pub channel: String,
     pub title: String,
     pub file_path: PathBuf,
+}
+
+#[allow(dead_code)]
+pub enum DownloadEvent {
+    Progress {
+        downloaded_bytes: u64,
+        total_bytes: u64,
+        speed_bytes_per_sec: u64,
+        eta_seconds: u64,
+    },
+    Finished(AudioDownload),
+    Error(anyhow::Error),
+}
+
+pub struct DownloadEventStream {
+    pub rx: mpsc::Receiver<DownloadEvent>,
 }
