@@ -9,7 +9,8 @@ mod proxy;
 use anyhow::Context;
 use clap::Parser;
 use tokio::task::JoinSet;
-use indicatif::{ ProgressBar, ProgressStyle, MultiProgress };
+use tokio::io::{ AsyncBufReadExt, BufReader };
+use indicatif::{ ProgressBar, ProgressStyle, MultiProgress, MultiProgressAlignment };
 use youtube::download_youtube_audio;
 use itunes::ItunesProvider;
 use tagger::{ write_metadata, rename_audio_file };
@@ -25,9 +26,27 @@ async fn main() -> anyhow::Result<()> {
             let mut set: JoinSet<anyhow::Result<()>> = JoinSet::new();
 
             let mp = MultiProgress::new();
+            mp.set_alignment(MultiProgressAlignment::Top);
+
+            // used unbounded mpsc so the keyboard task never blocks waiting for the receiver
+            let (skip_tx, mut skip_rx) = tokio::sync::mpsc::unbounded_channel::<()>();
+            tokio::spawn(async move {
+                let mut reader = BufReader::new(tokio::io::stdin());
+                let mut line = String::new();
+                loop {
+                    line.clear();
+                    if reader.read_line(&mut line).await.is_ok() {
+                        if skip_tx.send(()).is_err() {
+                            break;
+                        }
+                    }
+                }
+            });
 
             // downloading sequentially to avoid youtube's anti-bot 429 error
             for url in urls {
+                while skip_rx.try_recv().is_ok() {}
+
                 mp.println(format!("Starting download for: {}", url))?;
 
                 let cookies = cookies.clone();
@@ -46,31 +65,50 @@ async fn main() -> anyhow::Result<()> {
                 bar.enable_steady_tick(std::time::Duration::from_millis(100));
 
                 let mut downloaded_audio = None;
-
                 let mut download_size = 0;
-                while let Some(event) = stream.rx.recv().await {
-                    match event {
-                        DownloadEvent::Progress { downloaded_bytes, total_bytes, .. } => {
-                            bar.set_length(total_bytes);
-                            bar.set_position(downloaded_bytes);
 
-                            if total_bytes == downloaded_bytes && total_bytes > 0 {
-                                bar.disable_steady_tick();
-                                bar.set_message("Processing audio…");
-                                download_size = total_bytes;
+                loop {
+                    tokio::select! {
+                        event = stream.rx.recv() => {
+                            if let Some(event) = event {
+                                match event {
+                                    DownloadEvent::Progress { downloaded_bytes, total_bytes, .. } => {
+                                        bar.set_length(total_bytes);
+                                        bar.set_position(downloaded_bytes);
+
+                                        if total_bytes == downloaded_bytes && total_bytes > 0 {
+                                            bar.disable_steady_tick();
+                                            bar.set_message("Processing audio…");
+                                            download_size = total_bytes;
+                                        }
+                                    }
+                                    DownloadEvent::Finished(audio) => {
+                                        downloaded_audio = Some(audio);
+                                        break;
+                                    }
+                                    DownloadEvent::Error(e) => {
+                                        mp.remove(&bar);
+                                        mp.println(format!("Failed to download {}: {:?}", url, e))?;
+                                        break;
+                                    }
+                                }
+                            } else {
+                                break;
                             }
                         }
-                        DownloadEvent::Finished(audio) => {
-                            downloaded_audio = Some(audio);
-                            break;
-                        }
-                        DownloadEvent::Error(e) => {
-                            bar.finish_and_clear();
-                            mp.println(format!("Failed to download {}: {:?}", url, e))?;
-                            break;
+                        _ = skip_rx.recv() => {
+                            if let Some(cancel) = stream.cancel.take() {
+                                let _ = cancel.send(());
+                                if downloaded_audio.is_none() {
+                                    mp.remove(&bar);
+                                    mp.println(format!("Skipped {}", url))?;
+                                    break;
+                                }
+                            }
                         }
                     }
                 }
+
                 if let Some(download) = downloaded_audio {
                     let elapsed = download_start.elapsed();
                     let avg_speed = (download_size as f64) / elapsed.as_secs_f64();
@@ -135,6 +173,8 @@ async fn main() -> anyhow::Result<()> {
                     Err(join_err) => eprintln!("A tagging task panicked: {:?}", join_err),
                 }
             }
+
+            std::process::exit(0);
         }
         cli::Command::Update { paths } => {
             println!("Updating for {paths:?}");

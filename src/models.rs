@@ -1,5 +1,5 @@
 use std::path::PathBuf;
-use tokio::sync::mpsc;
+use tokio::sync::{ mpsc, oneshot };
 #[derive(Clone)]
 pub struct Metadata {
     pub artist_name: String,
@@ -30,4 +30,5 @@ pub enum DownloadEvent {
 
 pub struct DownloadEventStream {
     pub rx: mpsc::Receiver<DownloadEvent>,
+    pub cancel: Option<oneshot::Sender<()>>,
 }

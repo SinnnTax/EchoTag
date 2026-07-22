@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use anyhow::{ Context, bail };
 use tokio::process::Command;
-use tokio::sync::mpsc;
+use tokio::sync::{ mpsc, oneshot };
 use std::process::Stdio;
 use tokio::io::{ BufReader, AsyncBufReadExt };
 use regex::Regex;
@@ -14,20 +14,23 @@ pub fn download_youtube_audio(
 ) -> DownloadEventStream {
     let (tx, rx) = mpsc::channel(64);
 
+    let (cancel_tx, cancel_rx) = oneshot::channel::<()>();
+
     tokio::spawn(async move {
-        if let Err(e) = download(url, cookies_path, proxy, tx.clone()).await {
+        if let Err(e) = download(url, cookies_path, proxy, tx.clone(), cancel_rx).await {
             let _ = tx.send(DownloadEvent::Error(e)).await;
         }
     });
 
-    DownloadEventStream { rx }
+    DownloadEventStream { rx, cancel: Some(cancel_tx) }
 }
 
 async fn download(
     url: String,
     cookies_path: Option<PathBuf>,
     proxy: Option<String>,
-    tx: mpsc::Sender<DownloadEvent>
+    tx: mpsc::Sender<DownloadEvent>,
+    mut cancel: oneshot::Receiver<()>
 ) -> anyhow::Result<()> {
     let mut ytdlp = Command::new("yt-dlp");
 
@@ -91,28 +94,42 @@ async fn download(
     let mut title = String::new();
     let mut file_path_str = String::new();
 
-    while let Ok(Some(line)) = stdout_reader.next_line().await {
-        if let Some(caps) = progress_re.captures(&line) {
-            let percentage: f64 = caps[1].parse().unwrap_or(0.0);
-            let total_bytes = parse_size(&caps[2]);
-            let speed_bytes_per_sec = parse_speed(&caps[3]);
-            let eta_seconds = parse_eta(&caps[4]);
+    loop {
+        tokio::select! {
+            _ = &mut cancel => {
+                let _ = child.kill().await;
+                bail!("Download cancelled by user");
+            }
+            line = stdout_reader.next_line() => {
+                match line {
+                    Ok(Some(line)) => {
+                        if let Some(caps) = progress_re.captures(&line) {
+                            let percentage: f64 = caps[1].parse().unwrap_or(0.0);
+                            let total_bytes = parse_size(&caps[2]);
+                            let speed_bytes_per_sec = parse_speed(&caps[3]);
+                            let eta_seconds = parse_eta(&caps[4]);
+                            let downloaded_bytes = ((total_bytes as f64) * (percentage / 100.0)) as u64;
 
-            let downloaded_bytes = ((total_bytes as f64) * (percentage / 100.0)) as u64;
-
-            tx.send(DownloadEvent::Progress {
-                downloaded_bytes,
-                total_bytes,
-                speed_bytes_per_sec,
-                eta_seconds,
-            }).await?;
-        } else {
-            if channel.is_empty() {
-                channel = line;
-            } else if title.is_empty() {
-                title = line;
-            } else {
-                file_path_str = line;
+                            tx.send(DownloadEvent::Progress {
+                                downloaded_bytes,
+                                total_bytes,
+                                speed_bytes_per_sec,
+                                eta_seconds,
+                            }).await?;
+                        } else {
+                            if channel.is_empty() {
+                                channel = line;
+                            } else if title.is_empty() {
+                                title = line;
+                            } else {
+                                file_path_str = line;
+                            }
+                        }
+                    }
+                    // yt-dlp finished and closed stdout
+                    Ok(None) => break,
+                    Err(e) => bail!("Error reading stdout: {}", e),
+                }
             }
         }
     }
