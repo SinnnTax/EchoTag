@@ -1,13 +1,21 @@
 use axum::{ routing::get, Router, extract::{ Path, State } };
+use sqlx::sqlite::SqlitePool;
 
 #[derive(Clone)]
 struct AppState {
     name: String,
+    db: SqlitePool,
 }
 
 #[tokio::main]
 async fn main() {
-    let state = AppState { name: "EchoTag Cache Server".to_string() };
+    let db = SqlitePool::connect("sqlite:cache.db?mode=rwc").await.unwrap();
+
+    sqlx::query("CREATE TABLE IF NOT EXISTS cache (id TEXT PRIMARY KEY, status TEXT)")
+        .execute(&db).await
+        .unwrap();
+
+    let state = AppState { name: "EchoTag Cache Server".to_string(), db };
 
     let app = Router::new()
         .route("/health", get(health_check))
@@ -23,5 +31,10 @@ async fn health_check() -> &'static str {
 }
 
 async fn get_id(State(state): State<AppState>, Path(id): Path<u32>) -> String {
-    format!("message from {}: id is {id}", state.name)
+    let db_time: i64 = sqlx
+        ::query_scalar("SELECT CAST(strftime('%s', 'now') AS INTEGER)")
+        .fetch_one(&state.db).await
+        .unwrap();
+
+    format!("[{}] db time: {}. asked for id: {}", state.name, db_time, id)
 }
