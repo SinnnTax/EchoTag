@@ -2,9 +2,12 @@ use axum::{
     routing::{ get, post },
     Router,
     extract::{ Path, State, Multipart, DefaultBodyLimit },
-    http::StatusCode,
+    http::{ StatusCode, header, HeaderMap, HeaderValue },
+    response::{ IntoResponse, Response },
+    body::Body,
 };
 use sqlx::sqlite::SqlitePool;
+use tokio_util::io::ReaderStream;
 
 #[derive(Clone)]
 struct AppState {
@@ -23,7 +26,7 @@ async fn main() {
 
     let app = Router::new()
         .route("/health", get(health_check))
-        .route("/cache/{id}", get(get_id_status))
+        .route("/cache/{id}", get(download_mp3))
         .route("/cache/{id}/claim", post(claim_id))
         .route("/cache/{id}/upload", post(upload_mp3))
         .layer(DefaultBodyLimit::disable())
@@ -37,20 +40,53 @@ async fn health_check() -> &'static str {
     "connected!"
 }
 
-async fn get_id_status(State(state): State<AppState>, Path(id): Path<u32>) -> String {
-    let query = "SELECT status FROM cache WHERE id = ?";
+async fn download_mp3(State(_state): State<AppState>, Path(id): Path<u32>) -> Response {
+    let dir = format!("./cache/{}", id);
 
-    // fetch_optional returns ok(some(string)) if found and ok(none) if not found
-    let result: Option<String> = sqlx
-        ::query_scalar(query)
-        .bind(id.to_string())
-        .fetch_optional(&state.db).await
-        .unwrap();
+    let mut entries = match tokio::fs::read_dir(&dir).await {
+        Ok(e) => e,
+        Err(_) => {
+            return StatusCode::NOT_FOUND.into_response();
+        }
+    };
 
-    match result {
-        Some(status) => format!("ID {} exists. status: {}", id, status),
-        None => format!("ID {} not found in cache", id),
+    let mut filename = None;
+    while let Ok(Some(entry)) = entries.next_entry().await {
+        if let Some(name) = entry.file_name().to_str() {
+            if name.ends_with(".mp3") {
+                filename = Some(name.to_string());
+                break;
+            }
+        }
     }
+
+    let filename = match filename {
+        Some(f) => f,
+        None => {
+            return StatusCode::NOT_FOUND.into_response();
+        }
+    };
+
+    let file_path = format!("{}/{}", dir, filename);
+    let file = match tokio::fs::File::open(&file_path).await {
+        Ok(f) => f,
+        Err(_) => {
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    };
+
+    let stream = ReaderStream::new(file);
+    let body = Body::from_stream(stream);
+
+    let mut headers = HeaderMap::new();
+    headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("audio/mpeg"));
+
+    let disposition = format!("attachment; filename=\"{}\"", filename);
+    if let Ok(val) = HeaderValue::from_str(&disposition) {
+        headers.insert(header::CONTENT_DISPOSITION, val);
+    }
+
+    (StatusCode::OK, headers, body).into_response()
 }
 
 async fn claim_id(State(state): State<AppState>, Path(id): Path<u32>) -> String {
