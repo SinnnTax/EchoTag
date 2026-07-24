@@ -5,6 +5,7 @@ mod cli;
 mod metadata_provider;
 mod models;
 mod proxy;
+mod cache_client;
 
 use anyhow::Context;
 use clap::Parser;
