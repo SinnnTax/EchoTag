@@ -8,6 +8,7 @@ use axum::{
 };
 use sqlx::sqlite::SqlitePool;
 use tokio_util::io::ReaderStream;
+use chrono::Utc;
 
 #[derive(Clone)]
 struct AppState {
@@ -18,9 +19,16 @@ struct AppState {
 async fn main() {
     let db = SqlitePool::connect("sqlite:cache.db?mode=rwc").await.unwrap();
 
-    sqlx::query("CREATE TABLE IF NOT EXISTS cache (id TEXT PRIMARY KEY, status TEXT)")
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS cache (id TEXT PRIMARY KEY, status TEXT, created_at INTEGER)"
+    )
         .execute(&db).await
         .unwrap();
+
+    let cleanup_db = db.clone();
+    tokio::spawn(async move {
+        cleanup_stale_locks(cleanup_db).await;
+    });
 
     let state = AppState { db };
 
@@ -90,9 +98,11 @@ async fn download_mp3(State(_state): State<AppState>, Path(id): Path<String>) ->
 }
 
 async fn claim_id(State(state): State<AppState>, Path(id): Path<String>) -> StatusCode {
-    let query = "INSERT INTO cache (id, status) VALUES (?, 'pending')";
+    let now = Utc::now().timestamp();
 
-    let result = sqlx::query(query).bind(id.clone()).execute(&state.db).await;
+    let query = "INSERT INTO cache (id, status, created_at) VALUES (?, 'pending', ?)";
+
+    let result = sqlx::query(query).bind(id.clone()).bind(now).execute(&state.db).await;
 
     match result {
         Ok(_) => StatusCode::OK,
@@ -135,4 +145,31 @@ async fn upload_mp3(
     }
 
     StatusCode::BAD_REQUEST
+}
+
+async fn cleanup_stale_locks(db: SqlitePool) {
+    let cache_dir = std::path::PathBuf::from("./cache");
+
+    loop {
+        tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+
+        let query =
+            "SELECT id FROM cache WHERE status = 'pending' AND created_at < CAST(strftime('%s', 'now', '-600 seconds') AS INTEGER)";
+
+        let stuck_ids: Vec<String> = match sqlx::query_scalar(query).fetch_all(&db).await {
+            Ok(ids) => ids,
+            Err(e) => {
+                eprintln!("Cleanup task failed: {}", e);
+                continue;
+            }
+        };
+
+        for id in stuck_ids {
+            println!("Cleaning up stuck lock for ID: {}", id);
+            let dir = cache_dir.join(&id);
+            let _ = tokio::fs::remove_dir_all(&dir).await;
+
+            let _ = sqlx::query("DELETE FROM cache WHERE id = ?").bind(&id).execute(&db).await;
+        }
+    }
 }
