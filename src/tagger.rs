@@ -87,7 +87,7 @@ async fn download_cover_art(path: Option<&Path>, url: &str) -> anyhow::Result<()
     Ok(())
 }
 
-pub async fn rename_audio_file(old_path: &Path, metadata: &Metadata) -> anyhow::Result<()> {
+pub async fn rename_audio_file(old_path: &Path, metadata: &Metadata) -> anyhow::Result<PathBuf> {
     let new_file_name = format!(
         "{} - {} - ({}).mp3",
         metadata.artist_name,
@@ -108,7 +108,7 @@ pub async fn rename_audio_file(old_path: &Path, metadata: &Metadata) -> anyhow::
             format!("Couldn rename {} to {}", old_path.display(), new_path.display())
         )?;
 
-    Ok(())
+    Ok(new_path)
 }
 
 fn sanitize_filename(name: &str) -> String {

@@ -49,3 +49,40 @@ pub async fn try_download_from_cache(
 
     Ok(Some(file_path))
 }
+
+pub async fn claim_id(video_id: &str) -> anyhow::Result<bool> {
+    let url = format!("{}/cache/{}/claim", SERVER_URL, video_id);
+
+    let client = reqwest::Client::new();
+    let response = client.post(&url).send().await?;
+
+    Ok(response.status().is_success())
+}
+
+pub async fn upload_to_cache(video_id: &str, file_path: &Path) -> anyhow::Result<()> {
+    let url = format!("{}/cache/{}/upload", SERVER_URL, video_id);
+
+    let file_bytes = tokio::fs::read(file_path).await?;
+
+    let filename = file_path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("unknown.mp3")
+        .to_string();
+
+    let form = reqwest::multipart::Form
+        ::new()
+        .part(
+            "file",
+            reqwest::multipart::Part::bytes(file_bytes).file_name(filename).mime_str("audio/mpeg")?
+        );
+
+    let client = reqwest::Client::new();
+    let response = client.post(&url).multipart(form).send().await?;
+
+    if !response.status().is_success() {
+        bail!("Failed to upload to cache: {}", response.status());
+    }
+
+    Ok(())
+}

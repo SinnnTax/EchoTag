@@ -17,7 +17,7 @@ use itunes::ItunesProvider;
 use tagger::{ write_metadata, rename_audio_file };
 use metadata_provider::MetadataProvider;
 use models::{ DownloadEvent };
-use cache_client::try_download_from_cache;
+use cache_client::{ try_download_from_cache, claim_id, upload_to_cache };
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -47,9 +47,10 @@ async fn main() -> anyhow::Result<()> {
 
             // downloading sequentially to avoid youtube's anti-bot 429 error
             for url in urls {
+                let mut video_id_opt: Option<String> = None;
+
                 if let Some(video_id) = extract_video_id(&url) {
                     mp.println(format!("Checking cache for ID: {}", video_id))?;
-
                     let save_dir = std::path::Path::new("./");
 
                     match try_download_from_cache(&video_id, save_dir).await {
@@ -58,9 +59,63 @@ async fn main() -> anyhow::Result<()> {
                             continue;
                         }
                         Ok(None) => {
-                            mp.println(
-                                format!("Couldn't find in cache. Continuing to download...")
-                            )?;
+                            match claim_id(&video_id).await {
+                                Ok(true) => {
+                                    mp.println(format!("Successfully claimed ID {}", video_id))?;
+                                }
+                                Ok(false) => {
+                                    mp.println(
+                                        format!("ID {} is being downloaded by another user. Waiting...", video_id)
+                                    )?;
+
+                                    let mut got_file = false;
+                                    let mut attempts = 0;
+
+                                    // wait max 1 minutes
+                                    while attempts < 12 {
+                                        attempts += 1;
+                                        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+
+                                        match try_download_from_cache(&video_id, save_dir).await {
+                                            Ok(Some(path)) => {
+                                                mp.println(
+                                                    format!(
+                                                        "Cache is now ready! Downloaded to: {:?}",
+                                                        path
+                                                    )
+                                                )?;
+                                                got_file = true;
+                                                break;
+                                            }
+                                            Ok(None) => {
+                                                if attempts % 4 == 0 {
+                                                    mp.println(
+                                                        format!("Still waiting for other user...")
+                                                    )?;
+                                                }
+                                            }
+                                            Err(e) => {
+                                                mp.println(
+                                                    format!(
+                                                        "Cache error while waiting: {:?}. Falling back.",
+                                                        e
+                                                    )
+                                                )?;
+                                                break;
+                                            }
+                                        }
+                                    }
+
+                                    if got_file {
+                                        continue;
+                                    }
+                                }
+                                Err(e) => {
+                                    mp.println(
+                                        format!("Failed to claim ID: {:?}. Proceeding anyway...", e)
+                                    )?;
+                                }
+                            }
                         }
                         Err(e) => {
                             mp.println(
@@ -68,10 +123,9 @@ async fn main() -> anyhow::Result<()> {
                             )?;
                         }
                     }
-
-                    mp.println(format!("Couldn't find in cache. continuing to download..."))?;
+                    video_id_opt = Some(video_id);
                 } else {
-                    mp.println(format!("Could not extract YouTube ID from URL. skipping cache."))?;
+                    mp.println(format!("Could not extract YouTube ID from URL. Skipping cache."))?;
                 }
 
                 while skip_rx.try_recv().is_ok() {}
@@ -163,6 +217,8 @@ async fn main() -> anyhow::Result<()> {
                     let mp_clone = mp.clone();
                     let bar_clone = bar.clone();
 
+                    let task_video_id = video_id_opt.clone();
+
                     set.spawn(async move {
                         let taggin_start = std::time::Instant::now();
                         let results = ItunesProvider.find_metadata(&download).await?;
@@ -179,7 +235,10 @@ async fn main() -> anyhow::Result<()> {
                             "Failed to write metadata to the downloaded file"
                         )?;
 
-                        rename_audio_file(&download.file_path, &results[0]).await.with_context(||
+                        let final_file_path = rename_audio_file(
+                            &download.file_path,
+                            &results[0]
+                        ).await.with_context(||
                             format!("Failed to rename {:?}", &download.file_path)
                         )?;
 
@@ -188,6 +247,18 @@ async fn main() -> anyhow::Result<()> {
                         mp_clone.println(
                             format!("Tagged \"{}\" in {:.2?} seconds", download.title, elapsed)
                         )?;
+
+                        if let Some(vid) = task_video_id {
+                            mp_clone.println(format!("Uploading to cache server..."))?;
+                            match upload_to_cache(&vid, &final_file_path).await {
+                                Ok(_) =>
+                                    mp_clone.println(format!("Successfully uploaded to cache!"))?,
+                                Err(e) =>
+                                    mp_clone.println(
+                                        format!("Failed to upload to cache: {:?}", e)
+                                    )?,
+                            }
+                        }
 
                         Ok(())
                     });

@@ -89,14 +89,14 @@ async fn download_mp3(State(_state): State<AppState>, Path(id): Path<String>) ->
     (StatusCode::OK, headers, body).into_response()
 }
 
-async fn claim_id(State(state): State<AppState>, Path(id): Path<String>) -> String {
+async fn claim_id(State(state): State<AppState>, Path(id): Path<String>) -> StatusCode {
     let query = "INSERT INTO cache (id, status) VALUES (?, 'pending')";
 
     let result = sqlx::query(query).bind(id.clone()).execute(&state.db).await;
 
     match result {
-        Ok(_) => format!("Successfully claimed ID {}", id),
-        Err(e) => format!("Failed to claim ID {}: {}", id, e),
+        Ok(_) => StatusCode::OK,
+        Err(_) => StatusCode::CONFLICT,
     }
 }
 
