@@ -209,3 +209,13 @@ fn parse_eta(s: &str) -> u64 {
         _ => 0,
     }
 }
+
+pub fn extract_video_id(url: &str) -> Option<String> {
+    let re = Regex::new(r"(?:youtube\.com/watch\?v=|youtu\.be/)([\w-]{11})").unwrap();
+
+    if let Some(captures) = re.captures(url) {
+        return Some(captures[1].to_string());
+    }
+
+    None
+}

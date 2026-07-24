@@ -40,7 +40,7 @@ async fn health_check() -> &'static str {
     "connected!"
 }
 
-async fn download_mp3(State(_state): State<AppState>, Path(id): Path<u32>) -> Response {
+async fn download_mp3(State(_state): State<AppState>, Path(id): Path<String>) -> Response {
     let dir = format!("./cache/{}", id);
 
     let mut entries = match tokio::fs::read_dir(&dir).await {
@@ -89,10 +89,10 @@ async fn download_mp3(State(_state): State<AppState>, Path(id): Path<u32>) -> Re
     (StatusCode::OK, headers, body).into_response()
 }
 
-async fn claim_id(State(state): State<AppState>, Path(id): Path<u32>) -> String {
+async fn claim_id(State(state): State<AppState>, Path(id): Path<String>) -> String {
     let query = "INSERT INTO cache (id, status) VALUES (?, 'pending')";
 
-    let result = sqlx::query(query).bind(id.to_string()).execute(&state.db).await;
+    let result = sqlx::query(query).bind(id.clone()).execute(&state.db).await;
 
     match result {
         Ok(_) => format!("Successfully claimed ID {}", id),
@@ -102,7 +102,7 @@ async fn claim_id(State(state): State<AppState>, Path(id): Path<u32>) -> String 
 
 async fn upload_mp3(
     State(state): State<AppState>,
-    Path(id): Path<u32>,
+    Path(id): Path<String>,
     mut multipart: Multipart
 ) -> StatusCode {
     while let Ok(Some(field)) = multipart.next_field().await {
@@ -126,7 +126,7 @@ async fn upload_mp3(
         }
 
         let query = "UPDATE cache SET status = 'ready' WHERE id = ?";
-        let result = sqlx::query(query).bind(id.to_string()).execute(&state.db).await;
+        let result = sqlx::query(query).bind(id).execute(&state.db).await;
 
         return match result {
             Ok(res) if res.rows_affected() > 0 => StatusCode::OK,

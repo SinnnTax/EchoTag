@@ -12,11 +12,12 @@ use clap::Parser;
 use tokio::task::JoinSet;
 use tokio::io::{ AsyncBufReadExt, BufReader };
 use indicatif::{ ProgressBar, ProgressStyle, MultiProgress, MultiProgressAlignment };
-use youtube::download_youtube_audio;
+use youtube::{ download_youtube_audio, extract_video_id };
 use itunes::ItunesProvider;
 use tagger::{ write_metadata, rename_audio_file };
 use metadata_provider::MetadataProvider;
 use models::{ DownloadEvent };
+use cache_client::try_download_from_cache;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -46,6 +47,33 @@ async fn main() -> anyhow::Result<()> {
 
             // downloading sequentially to avoid youtube's anti-bot 429 error
             for url in urls {
+                if let Some(video_id) = extract_video_id(&url) {
+                    mp.println(format!("Checking cache for ID: {}", video_id))?;
+
+                    let save_dir = std::path::Path::new("./");
+
+                    match try_download_from_cache(&video_id, save_dir).await {
+                        Ok(Some(path)) => {
+                            mp.println(format!("Already cached! Downloaded to: {:?}", path))?;
+                            continue;
+                        }
+                        Ok(None) => {
+                            mp.println(
+                                format!("Couldn't find in cache. Continuing to download...")
+                            )?;
+                        }
+                        Err(e) => {
+                            mp.println(
+                                format!("Cache server error: {:?}. Falling back to YouTube.", e)
+                            )?;
+                        }
+                    }
+
+                    mp.println(format!("Couldn't find in cache. continuing to download..."))?;
+                } else {
+                    mp.println(format!("Could not extract YouTube ID from URL. skipping cache."))?;
+                }
+
                 while skip_rx.try_recv().is_ok() {}
 
                 mp.println(format!("Starting download for: {}", url))?;
