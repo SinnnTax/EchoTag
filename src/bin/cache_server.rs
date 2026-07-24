@@ -1,4 +1,9 @@
-use axum::{ routing::{ get, post }, Router, extract::{ Path, State }, http::StatusCode };
+use axum::{
+    routing::{ get, post },
+    Router,
+    extract::{ Path, State, Multipart, DefaultBodyLimit },
+    http::StatusCode,
+};
 use sqlx::sqlite::SqlitePool;
 
 #[derive(Clone)]
@@ -21,6 +26,7 @@ async fn main() {
         .route("/cache/{id}", get(get_id_status))
         .route("/cache/{id}/claim", post(claim_id))
         .route("/cache/{id}/upload", post(upload_mp3))
+        .layer(DefaultBodyLimit::disable())
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:3000").await.unwrap();
@@ -58,15 +64,39 @@ async fn claim_id(State(state): State<AppState>, Path(id): Path<u32>) -> String 
     }
 }
 
-async fn upload_mp3(State(state): State<AppState>, Path(id): Path<u32>) -> StatusCode {
-    let query = "UPDATE cache SET status = 'ready' WHERE id = ?";
+async fn upload_mp3(
+    State(state): State<AppState>,
+    Path(id): Path<u32>,
+    mut multipart: Multipart
+) -> StatusCode {
+    while let Ok(Some(field)) = multipart.next_field().await {
+        let filename = field.file_name().unwrap_or("unknown.mp3").to_string();
 
-    let result = sqlx::query(query).bind(id.to_string()).execute(&state.db).await;
+        let data = match field.bytes().await {
+            Ok(bytes) => bytes,
+            Err(_) => {
+                return StatusCode::BAD_REQUEST;
+            }
+        };
 
-    match result {
-        Ok(res) => {
-            if res.rows_affected() > 0 { StatusCode::OK } else { StatusCode::NOT_FOUND }
+        let dir = format!("./cache/{}", id);
+        if tokio::fs::create_dir_all(&dir).await.is_err() {
+            return StatusCode::INTERNAL_SERVER_ERROR;
         }
-        Err(_) => StatusCode::INTERNAL_SERVER_ERROR,
+
+        let file_path = format!("{}/{}", dir, filename);
+        if tokio::fs::write(&file_path, &data).await.is_err() {
+            return StatusCode::INTERNAL_SERVER_ERROR;
+        }
+
+        let query = "UPDATE cache SET status = 'ready' WHERE id = ?";
+        let result = sqlx::query(query).bind(id.to_string()).execute(&state.db).await;
+
+        return match result {
+            Ok(res) if res.rows_affected() > 0 => StatusCode::OK,
+            _ => StatusCode::NOT_FOUND,
+        };
     }
+
+    StatusCode::BAD_REQUEST
 }
