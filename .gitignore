@@ -9,3 +9,4 @@
 *.db
 *.py
 *.env
+*.json
