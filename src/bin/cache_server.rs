@@ -115,26 +115,62 @@ async fn upload_mp3(
     Path(id): Path<String>,
     mut multipart: Multipart
 ) -> StatusCode {
+    let dir = format!("./cache/{}", id);
+    if tokio::fs::create_dir_all(&dir).await.is_err() {
+        return StatusCode::INTERNAL_SERVER_ERROR;
+    }
+
+    let mut mp3_saved = false;
+    let mut metadata_saved = false;
+
     while let Ok(Some(field)) = multipart.next_field().await {
-        let filename = field.file_name().unwrap_or("unknown.mp3").to_string();
+        let field_name = field.name().unwrap_or("").to_string();
 
-        let data = match field.bytes().await {
-            Ok(bytes) => bytes,
-            Err(_) => {
-                return StatusCode::BAD_REQUEST;
+        if field_name == "file" {
+            let filename = field.file_name();
+            let filename = match filename {
+                Some(s) => s.to_string(),
+                None => {
+                    let _ = sqlx
+                        ::query("DELETE FROM cache WHERE id = ?")
+                        .bind(&id)
+                        .execute(&state.db).await;
+
+                    let _ = tokio::fs::remove_dir_all(&dir).await;
+
+                    return StatusCode::BAD_REQUEST;
+                }
+            };
+
+            let data = match field.bytes().await {
+                Ok(bytes) => bytes,
+                Err(_) => {
+                    return StatusCode::BAD_REQUEST;
+                }
+            };
+
+            let file_path = format!("{}/{}", dir, filename);
+            if tokio::fs::write(&file_path, &data).await.is_err() {
+                return StatusCode::INTERNAL_SERVER_ERROR;
             }
-        };
+            mp3_saved = true;
+        } else if field_name == "metadata" {
+            let data = match field.bytes().await {
+                Ok(bytes) => bytes,
+                Err(_) => {
+                    return StatusCode::BAD_REQUEST;
+                }
+            };
 
-        let dir = format!("./cache/{}", id);
-        if tokio::fs::create_dir_all(&dir).await.is_err() {
-            return StatusCode::INTERNAL_SERVER_ERROR;
+            let file_path = format!("{}/metadata.json", dir);
+            if tokio::fs::write(&file_path, &data).await.is_err() {
+                return StatusCode::INTERNAL_SERVER_ERROR;
+            }
+            metadata_saved = true;
         }
+    }
 
-        let file_path = format!("{}/{}", dir, filename);
-        if tokio::fs::write(&file_path, &data).await.is_err() {
-            return StatusCode::INTERNAL_SERVER_ERROR;
-        }
-
+    if mp3_saved && metadata_saved {
         let query = "UPDATE cache SET status = 'ready' WHERE id = ?";
         let result = sqlx::query(query).bind(id).execute(&state.db).await;
 

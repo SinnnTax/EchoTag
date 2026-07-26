@@ -10,7 +10,7 @@ pub fn set_api_key() -> anyhow::Result<()> {
 
     io::stdin().read_line(&mut input).context("Failed to read input")?;
 
-    let mut provider = input.trim().to_lowercase();
+    let provider = input.trim().to_lowercase();
 
     if !["gemini", "openai", "anthropic"].contains(&provider.as_str()) {
         bail!("Invalid provider. Please choose from [gemini, openai, anthropic].");
