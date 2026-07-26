@@ -7,6 +7,7 @@ mod models;
 mod proxy;
 mod cache_client;
 mod config;
+mod history;
 
 use anyhow::Context;
 use clap::Parser;
@@ -18,7 +19,7 @@ use itunes::ItunesProvider;
 use tagger::{ write_metadata, rename_audio_file };
 use metadata_provider::MetadataProvider;
 use models::{ DownloadEvent };
-use cache_client::{ try_download_from_cache, claim_id, upload_to_cache };
+use cache_client::{ try_download_from_cache, claim_id, upload_to_cache, get_cached_metadata };
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -57,6 +58,24 @@ async fn main() -> anyhow::Result<()> {
                     match try_download_from_cache(&video_id, save_dir).await {
                         Ok(Some(path)) => {
                             mp.println(format!("Already cached! Downloaded to: {:?}", path))?;
+                            match get_cached_metadata(&video_id).await {
+                                Ok(Some(meta)) => {
+                                    if let Err(e) = history::append_to_history(&meta).await {
+                                        mp.println(format!("Failed to save to history: {:?}", e))?;
+                                    }
+                                }
+                                Ok(None) =>
+                                    mp.println(
+                                        format!("No metadata found for {} in cache", path.display())
+                                    )?,
+                                Err(e) =>
+                                    mp.println(
+                                        format!(
+                                            "Failed to fetch metadata from cache server: {:?}",
+                                            e
+                                        )
+                                    )?,
+                            }
                             continue;
                         }
                         Ok(None) => {
@@ -251,7 +270,7 @@ async fn main() -> anyhow::Result<()> {
 
                         if let Some(vid) = task_video_id {
                             mp_clone.println(format!("Uploading to cache server..."))?;
-                            match upload_to_cache(&vid, &final_file_path).await {
+                            match upload_to_cache(&vid, &final_file_path, &results[0]).await {
                                 Ok(_) =>
                                     mp_clone.println(format!("Successfully uploaded to cache!"))?,
                                 Err(e) =>
@@ -259,6 +278,10 @@ async fn main() -> anyhow::Result<()> {
                                         format!("Failed to upload to cache: {:?}", e)
                                     )?,
                             }
+                        }
+
+                        if let Err(e) = history::append_to_history(&results[0]).await {
+                            mp_clone.println(format!("Failed to save to history: {:?}", e))?;
                         }
 
                         Ok(())

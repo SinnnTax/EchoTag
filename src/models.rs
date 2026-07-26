@@ -1,6 +1,8 @@
 use std::path::PathBuf;
 use tokio::sync::{ mpsc, oneshot };
-#[derive(Clone)]
+use serde::{ Serialize, Deserialize };
+
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Metadata {
     pub artist_name: String,
     pub collection_name: String,

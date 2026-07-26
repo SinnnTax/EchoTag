@@ -3,6 +3,7 @@ use std::path::{ Path, PathBuf };
 use tokio::io::AsyncWriteExt;
 use futures_util::StreamExt;
 use reqwest::StatusCode;
+use crate::models::Metadata;
 
 const SERVER_URL: &'static str = "http://127.0.0.1:3000";
 
@@ -59,7 +60,11 @@ pub async fn claim_id(video_id: &str) -> anyhow::Result<bool> {
     Ok(response.status().is_success())
 }
 
-pub async fn upload_to_cache(video_id: &str, file_path: &Path) -> anyhow::Result<()> {
+pub async fn upload_to_cache(
+    video_id: &str,
+    file_path: &Path,
+    metadata: &Metadata
+) -> anyhow::Result<()> {
     let url = format!("{}/cache/{}/upload", SERVER_URL, video_id);
 
     let file_bytes = tokio::fs::read(file_path).await?;
@@ -67,14 +72,20 @@ pub async fn upload_to_cache(video_id: &str, file_path: &Path) -> anyhow::Result
     let filename = file_path
         .file_name()
         .and_then(|n| n.to_str())
-        .unwrap_or("unknown.mp3")
+        .with_context(|| format!("Couldn't extract file name from {}", file_path.display()))?
         .to_string();
+
+    let metadata_json = serde_json::to_string(metadata)?;
 
     let form = reqwest::multipart::Form
         ::new()
         .part(
             "file",
             reqwest::multipart::Part::bytes(file_bytes).file_name(filename).mime_str("audio/mpeg")?
+        )
+        .part(
+            "metadata",
+            reqwest::multipart::Part::text(metadata_json).mime_str("application/json")?
         );
 
     let client = reqwest::Client::new();
@@ -85,4 +96,22 @@ pub async fn upload_to_cache(video_id: &str, file_path: &Path) -> anyhow::Result
     }
 
     Ok(())
+}
+
+pub async fn get_cached_metadata(video_id: &str) -> anyhow::Result<Option<Metadata>> {
+    let url = format!("{}/cache/{}/metadata", SERVER_URL, video_id);
+
+    let response = reqwest::get(&url).await?;
+
+    if response.status() == StatusCode::NOT_FOUND {
+        return Ok(None);
+    }
+
+    if !response.status().is_success() {
+        bail!("Cache server returned error: {}", response.status());
+    }
+
+    let metadata = response.json::<Metadata>().await?;
+
+    Ok(Some(metadata))
 }
