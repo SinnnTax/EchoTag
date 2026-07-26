@@ -20,14 +20,15 @@ pub fn set_api_key() -> anyhow::Result<()> {
     print!("> ");
     io::stdout().flush()?;
 
+    input.clear();
     io::stdin().read_line(&mut input).context("Failed to read input")?;
 
     let api_key = input.trim().to_string();
 
-    provider = format!("AI_PROVIDER={}", provider);
-    let key = format!("{}_API_KEY={}", provider.to_uppercase(), api_key);
+    let provider_line = format!("AI_PROVIDER={}", provider);
+    let key_line = format!("{}_API_KEY={}", provider.to_uppercase(), api_key);
 
-    let file_content = format!("{}\n{}\n", provider, key);
+    let file_content = format!("{}\n{}\n", provider_line, key_line);
     std::fs::write(".env", file_content).context("Failed to write .env file")?;
 
     println!("\nSuccess! Configuration saved to .env");
