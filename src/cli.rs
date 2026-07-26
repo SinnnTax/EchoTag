@@ -32,4 +32,6 @@ pub enum Command {
         #[arg(long)]
         set_api_key: bool,
     },
+    /// Chat with the AI to get music recommendations
+    Chat,
 }

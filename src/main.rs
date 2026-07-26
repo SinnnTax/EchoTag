@@ -8,6 +8,7 @@ mod proxy;
 mod cache_client;
 mod config;
 mod history;
+mod ai;
 
 use anyhow::Context;
 use clap::Parser;
@@ -309,6 +310,9 @@ async fn main() -> anyhow::Result<()> {
             } else {
                 println!("Use --set-api-key flag to configure your AI provider.");
             }
+        }
+        cli::Command::Chat => {
+            ai::start_chat().await?;
         }
     }
 
