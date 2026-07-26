@@ -6,6 +6,7 @@ mod metadata_provider;
 mod models;
 mod proxy;
 mod cache_client;
+mod config;
 
 use anyhow::Context;
 use clap::Parser;
@@ -278,6 +279,13 @@ async fn main() -> anyhow::Result<()> {
         }
         cli::Command::Update { paths } => {
             println!("Updating for {paths:?}");
+        }
+        cli::Command::Config { set_api_key } => {
+            if set_api_key {
+                config::set_api_key()?;
+            } else {
+                println!("Use --set-api-key flag to configure your AI provider.");
+            }
         }
     }
 

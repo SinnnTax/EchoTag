@@ -10,6 +10,7 @@ dependencies = [
  "axum",
  "chrono",
  "clap",
+ "dotenvy",
  "futures-util",
  "indicatif",
  "lofty",

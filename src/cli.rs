@@ -27,4 +27,9 @@ pub enum Command {
         #[arg(num_args = 1.., required = true)]
         paths: Vec<PathBuf>,
     },
+    /// Configure AI provider and API key for the chat feature
+    Config {
+        #[arg(long)]
+        set_api_key: bool,
+    },
 }
