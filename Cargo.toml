@@ -22,5 +22,6 @@ rig = "0.40.0"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.150"
 sqlx = { version = "0.9.0", features = ["sqlite", "runtime-tokio"] }
+termimad = "0.35.1"
 tokio = { version = "1.53.0", features = ["full"] }
 tokio-util = { version = "0.7.19", features = ["io"] }

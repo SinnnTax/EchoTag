@@ -6,6 +6,7 @@ use rig::providers;
 use std::env;
 use std::io::{ self, Write };
 use tokio::io::{ AsyncBufReadExt, BufReader };
+use termimad::print_text;
 use crate::history;
 
 pub async fn start_chat() -> anyhow::Result<()> {
@@ -45,14 +46,15 @@ pub async fn start_chat() -> anyhow::Result<()> {
 
 async fn chat<M: CompletionModel + 'static>(agent: Agent<M>) -> anyhow::Result<()> {
     println!("          (Type 'exit' or 'quit' to stop)          ");
-    println!("==================================================\n");
+    println!("/--------------------------------------------------\\\n");
 
     let initial_prompt =
         "Please introduce yourself briefly and give me my 3 song recommendations based on my history.";
 
     match agent.prompt(initial_prompt).await {
         Ok(response) => {
-            println!("\nAI: {}\n", response);
+            print_text(&response); // Renders the markdown!
+            println!();
         }
         Err(e) => {
             eprintln!("\n[AI Error]: {:?}\n", e);
@@ -64,7 +66,7 @@ async fn chat<M: CompletionModel + 'static>(agent: Agent<M>) -> anyhow::Result<(
     let mut input = String::new();
 
     loop {
-        print!("You: ");
+        print!("-> ");
         io::stdout().flush()?;
 
         input.clear();
@@ -85,7 +87,8 @@ async fn chat<M: CompletionModel + 'static>(agent: Agent<M>) -> anyhow::Result<(
 
         match agent.prompt(trimmed).await {
             Ok(response) => {
-                println!("\n[AI]: {}\n", response);
+                print_text(&response); // Renders the markdown!
+                println!();
             }
             Err(e) => {
                 eprintln!("\n[AI Error]: {:?}\n", e);
