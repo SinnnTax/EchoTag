@@ -36,6 +36,7 @@ async fn main() {
         .route("/health", get(health_check))
         .route("/cache/{id}", get(download_mp3))
         .route("/cache/{id}/claim", post(claim_id))
+        .route("/cache/{id}/metadata", get(get_metadata))
         .route("/cache/{id}/upload", post(upload_mp3))
         .layer(DefaultBodyLimit::disable())
         .with_state(state);
@@ -207,5 +208,19 @@ async fn cleanup_stale_locks(db: SqlitePool) {
 
             let _ = sqlx::query("DELETE FROM cache WHERE id = ?").bind(&id).execute(&db).await;
         }
+    }
+}
+
+async fn get_metadata(Path(id): Path<String>) -> Response {
+    let file_path = format!("./cache/{}/metadata.json", id);
+
+    match tokio::fs::read(&file_path).await {
+        Ok(data) => {
+            let mut headers = HeaderMap::new();
+            headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("application/json"));
+
+            (StatusCode::OK, headers, data).into_response()
+        }
+        Err(_) => StatusCode::NOT_FOUND.into_response(),
     }
 }
