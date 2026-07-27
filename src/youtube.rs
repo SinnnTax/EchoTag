@@ -5,7 +5,7 @@ use tokio::sync::{ mpsc, oneshot };
 use std::process::Stdio;
 use tokio::io::{ BufReader, AsyncBufReadExt };
 use regex::Regex;
-use crate::models::{ AudioDownload, DownloadEvent, DownloadEventStream };
+use crate::models::{ AudioDownload, DownloadEvent, DownloadEventStream, YTSearchResult };
 
 pub fn download_youtube_audio(
     url: String,
@@ -218,4 +218,46 @@ pub fn extract_video_id(url: &str) -> Option<String> {
     }
 
     None
+}
+
+pub async fn search(
+    query: &str,
+    cookies_path: Option<PathBuf>,
+    proxy: Option<String>
+) -> anyhow::Result<Vec<YTSearchResult>> {
+    let mut ytdlp = Command::new("yt-dlp");
+
+    let query = format!("ytsearch3:{query}");
+
+    ytdlp.args(["--print", "%(title)s</SEP/>%(channel)s</SEP/>%(webpage_url)s", &query]);
+
+    if let Some(path) = cookies_path {
+        ytdlp.arg("--cookies").arg(path);
+    }
+
+    if let Some(p) = proxy {
+        ytdlp.arg("--proxy").arg(p);
+    }
+
+    let output = ytdlp
+        .output().await
+        .with_context(|| format!("Failed to search for {} with yt-dlp", query))?;
+
+    let mut result = vec![];
+
+    for line in String::from_utf8_lossy(&output.stdout).lines() {
+        let mut parts = line.split("</SEP/>");
+
+        let (Some(title), Some(channel), Some(url)) = (
+            parts.next(),
+            parts.next(),
+            parts.next(),
+        ) else {
+            continue;
+        };
+
+        result.push(YTSearchResult::new(title.to_string(), channel.to_string(), url.to_string()));
+    }
+
+    Ok(result)
 }

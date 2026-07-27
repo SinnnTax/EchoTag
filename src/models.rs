@@ -34,3 +34,19 @@ pub struct DownloadEventStream {
     pub rx: mpsc::Receiver<DownloadEvent>,
     pub cancel: Option<oneshot::Sender<()>>,
 }
+
+pub struct YTSearchResult {
+    pub title: String,
+    pub channel: String,
+    pub url: String,
+}
+
+impl YTSearchResult {
+    pub fn new(title: String, channel: String, url: String) -> Self {
+        Self {
+            title,
+            channel,
+            url,
+        }
+    }
+}
