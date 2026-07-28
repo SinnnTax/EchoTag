@@ -7,8 +7,35 @@ use std::env;
 use std::io::{ self, Write };
 use tokio::io::{ AsyncBufReadExt, BufReader };
 use termimad::print_text;
+use std::path::PathBuf;
+use crate::models::YTSearchResult;
 use crate::history;
+use crate::youtube;
 
+#[rig::tool_macro(
+    description = "Searches YouTube for a specific song. 
+Use this tool when the user asks to download, find, or play a song. 
+Do not use it for general recommendations. 
+Returns a compact list of up to 3 matching videos. 
+You must analyze the 'title' and 'channel' fields to select the official version, avoiding 'slowed', 'sped up', or 'cover' versions unless explicitly requested.
+Parameters:
+- artist_name: The official name of the artist or band (string).
+- track_name: The exact title of the song (string).",
+    required(artist_name, track_name)
+)]
+async fn search_youtube(
+    artist_name: String,
+    track_name: String
+) -> Result<Vec<YTSearchResult>, rig::tool::ToolError> {
+    let query = format!("{} - {}", artist_name, track_name);
+    let cookies_path = Some(PathBuf::from("cookies.txt"));
+
+    let results = youtube
+        ::search(&query, cookies_path, None).await
+        .map_err(|e| rig::tool::ToolError::ToolCallError(e.to_string().into()))?;
+
+    Ok(results)
+}
 pub async fn start_chat() -> anyhow::Result<()> {
     dotenvy::dotenv().ok();
 
@@ -23,21 +50,36 @@ pub async fn start_chat() -> anyhow::Result<()> {
             let client = providers::openai::Client
                 ::from_env()
                 .context("OPENAI_API_KEY not found in environment")?;
-            let agent = client.agent("gpt-5-mini").preamble(&preamble_text).build();
+            let agent = client
+                .agent("gpt-5-mini")
+                .preamble(&preamble_text)
+                .tool(SearchYoutube)
+                .default_max_turns(5)
+                .build();
             chat(agent).await
         }
         "gemini" => {
             let client = providers::gemini::Client
                 ::from_env()
                 .context("GEMINI_API_KEY not found in environment")?;
-            let agent = client.agent("gemini-3.6-flash").preamble(&preamble_text).build();
+            let agent = client
+                .agent("gemini-3.6-flash")
+                .preamble(&preamble_text)
+                .tool(SearchYoutube)
+                .default_max_turns(5)
+                .build();
             chat(agent).await
         }
         "anthropic" => {
             let client = providers::anthropic::Client
                 ::from_env()
                 .context("ANTHROPIC_API_KEY not found in environment")?;
-            let agent = client.agent("claude-haiku-4-5").preamble(&preamble_text).build();
+            let agent = client
+                .agent("claude-haiku-4-5")
+                .preamble(&preamble_text)
+                .tool(SearchYoutube)
+                .default_max_turns(5)
+                .build();
             chat(agent).await
         }
         _ => bail!("Unsupported AI_PROVIDER: {}", provider_str),
@@ -49,11 +91,12 @@ async fn chat<M: CompletionModel + 'static>(agent: Agent<M>) -> anyhow::Result<(
     println!("/--------------------------------------------------\\\n");
 
     let initial_prompt =
-        "Please introduce yourself briefly and give me my 3 song recommendations based on my history.";
+        "Please introduce yourself briefly and give me my 3 song recommendations based on my history. \
+        Tell the user they can ask you to search for and download any of them.";
 
     match agent.prompt(initial_prompt).await {
         Ok(response) => {
-            print_text(&response); // Renders the markdown!
+            print_text(&response);
             println!();
         }
         Err(e) => {
@@ -87,7 +130,7 @@ async fn chat<M: CompletionModel + 'static>(agent: Agent<M>) -> anyhow::Result<(
 
         match agent.prompt(trimmed).await {
             Ok(response) => {
-                print_text(&response); // Renders the markdown!
+                print_text(&response);
                 println!();
             }
             Err(e) => {

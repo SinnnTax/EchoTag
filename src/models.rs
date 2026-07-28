@@ -35,6 +35,7 @@ pub struct DownloadEventStream {
     pub cancel: Option<oneshot::Sender<()>>,
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct YTSearchResult {
     pub title: String,
     pub channel: String,
