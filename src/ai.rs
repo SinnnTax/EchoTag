@@ -1,5 +1,5 @@
 use anyhow::{ Context, bail };
-use rig::client::{ CompletionClient, ProviderClient };
+use rig::client::{ CompletionClient, ProviderClient, Nothing };
 use rig::completion::{ CompletionModel, Prompt };
 use rig::agent::Agent;
 use rig::providers;
@@ -14,10 +14,16 @@ use crate::youtube;
 
 #[rig::tool_macro(
     description = "Searches YouTube for a specific song. 
-Use this tool when the user asks to download, find, or play a song. 
-Do not use it for general recommendations. 
+Use this tool when the user asks to download, find, play, or get a link for a song. 
 Returns a compact list of up to 3 matching videos. 
 You must analyze the 'title' and 'channel' fields to select the official version, avoiding 'slowed', 'sped up', or 'cover' versions unless explicitly requested.
+
+After analyzing the results, your next step depends on what the user asked:
+- If the user ONLY asked for the URL or link (e.g., 'give me the url'), simply reply with the URL. Do NOT call the download tool.
+- If the user asked to download, play, or save the song (e.g., 'download song 1'), extract the 'url' of the best result and call the 'download_url' tool.
+
+CRITICAL ERROR HANDLING: If this tool returns an error, or returns 'No YouTube results found', you MUST stop and inform the user of the exact error. Do NOT try to guess or hallucinate URLs. Do NOT call the download tool if the search fails.
+
 Parameters:
 - artist_name: The official name of the artist or band (string).
 - track_name: The exact title of the song (string).",
@@ -36,6 +42,37 @@ async fn search_youtube(
 
     Ok(results)
 }
+
+#[rig::tool_macro(
+    description = "Downloads a specific YouTube video as an MP3 in the background. 
+Use this tool ONLY after you have called 'search_youtube' and selected the best URL from the results. 
+Do not guess URLs; only pass URLs that were returned by the search tool.
+
+CRITICAL RULE: Do NOT guess, hallucinate, or make up URLs. You must ONLY pass URLs that were literally returned by the 'search_youtube' tool. If you do not have a valid URL from the search tool, do not call this tool.
+
+Parameters:
+- url: The exact YouTube video URL string returned by the search tool.",
+    required(url)
+)]
+async fn download_url(url: String) -> Result<String, rig::tool::ToolError> {
+    let exe_path = std::env
+        ::current_exe()
+        .map_err(|e| rig::tool::ToolError::ToolCallError(e.to_string().into()))?;
+
+    tokio::process::Command
+        ::new(exe_path)
+        .arg("download")
+        .arg("-c")
+        .arg("cookies.txt")
+        .arg(&url)
+        .spawn()
+        .map_err(|e| rig::tool::ToolError::ToolCallError(e.to_string().into()))?;
+
+    Ok(
+        format!("Successfully started downloading {} in the background. Tell the user it is downloading.", url)
+    )
+}
+
 pub async fn start_chat() -> anyhow::Result<()> {
     dotenvy::dotenv().ok();
 
@@ -54,6 +91,7 @@ pub async fn start_chat() -> anyhow::Result<()> {
                 .agent("gpt-5-mini")
                 .preamble(&preamble_text)
                 .tool(SearchYoutube)
+                .tool(DownloadUrl)
                 .default_max_turns(5)
                 .build();
             chat(agent).await
@@ -66,6 +104,7 @@ pub async fn start_chat() -> anyhow::Result<()> {
                 .agent("gemini-3.6-flash")
                 .preamble(&preamble_text)
                 .tool(SearchYoutube)
+                .tool(DownloadUrl)
                 .default_max_turns(5)
                 .build();
             chat(agent).await
@@ -78,6 +117,27 @@ pub async fn start_chat() -> anyhow::Result<()> {
                 .agent("claude-haiku-4-5")
                 .preamble(&preamble_text)
                 .tool(SearchYoutube)
+                .tool(DownloadUrl)
+                .default_max_turns(5)
+                .build();
+            chat(agent).await
+        }
+        "ollama" => {
+            let model_name = env
+                ::var("OLLAMA_MODEL")
+                .context("OLLAMA_MODEL not found in .env. Run `echotag config --setup` first.")?;
+
+            let client = providers::ollama::Client
+                ::new(Nothing)
+                .context(
+                    "Failed to initialize Ollama client. Make sure Ollama is running at http://localhost:11434"
+                )?;
+
+            let agent = client
+                .agent(&model_name)
+                .preamble(&preamble_text)
+                .tool(SearchYoutube)
+                .tool(DownloadUrl)
                 .default_max_turns(5)
                 .build();
             chat(agent).await

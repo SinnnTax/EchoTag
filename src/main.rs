@@ -304,11 +304,11 @@ async fn main() -> anyhow::Result<()> {
         cli::Command::Update { paths } => {
             println!("Updating for {paths:?}");
         }
-        cli::Command::Config { set_api_key } => {
-            if set_api_key {
-                config::set_api_key()?;
+        cli::Command::Config { setup } => {
+            if setup {
+                config::setup_provider()?;
             } else {
-                println!("Use --set-api-key flag to configure your AI provider.");
+                println!("Use --setup flag to configure your AI provider.");
             }
         }
         cli::Command::Chat => {
