@@ -30,7 +30,7 @@ pub enum Command {
     /// Configure AI provider and API key for the chat feature
     Config {
         #[arg(long)]
-        set_api_key: bool,
+        setup: bool,
     },
     /// Chat with the AI to get music recommendations
     Chat,
