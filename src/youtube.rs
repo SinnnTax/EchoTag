@@ -243,6 +243,11 @@ pub async fn search(
         .output().await
         .with_context(|| format!("Failed to search for {} with yt-dlp", query))?;
 
+    if !output.status.success() {
+        let err = String::from_utf8_lossy(&output.stderr).to_string();
+        bail!("yt-dlp search failed: {}", err);
+    }
+
     let mut result = vec![];
 
     for line in String::from_utf8_lossy(&output.stdout).lines() {
