@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use crate::models::Metadata;
 
 pub async fn append_to_history(meta: &Metadata) -> anyhow::Result<()> {
-    let path = Path::new("./history.json");
+    let path = Path::new("./history.ndjson");
 
     if path.exists() {
         if let Ok(content) = tokio::fs::read_to_string(path).await {
@@ -29,7 +29,7 @@ pub async fn append_to_history(meta: &Metadata) -> anyhow::Result<()> {
         .create(true)
         .append(true)
         .open(path).await
-        .context("Failed to open history.json")?;
+        .context("Failed to open history.ndjson")?;
 
     file.write_all(json_line.as_bytes()).await?;
     file.write_all(b"\n").await?;
@@ -38,7 +38,7 @@ pub async fn append_to_history(meta: &Metadata) -> anyhow::Result<()> {
 }
 
 pub async fn get_history_prompt() -> anyhow::Result<String> {
-    let path = Path::new("./history.json");
+    let path = Path::new("./history.ndjson");
 
     if !path.exists() {
         return Ok(
