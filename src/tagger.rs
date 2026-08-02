@@ -8,12 +8,18 @@ use tokio::io::AsyncWriteExt;
 use crate::models::Metadata;
 
 pub async fn write_metadata(metadata: &Metadata, path: &Path) -> anyhow::Result<()> {
-    let cover_at_path = format!("{}_{}.jpg", &metadata.artist_name, &metadata.track_name);
-    let cover_art_path = PathBuf::from(&cover_at_path);
+    let cover_art_path = if metadata.artwork_url == "default_cover_at.jpg" {
+        PathBuf::from("default_cover_at.jpg")
+    } else {
+        let cover_at_path = format!("{}_{}.jpg", &metadata.artist_name, &metadata.track_name);
+        let cover_art_path = PathBuf::from(&cover_at_path);
 
-    download_cover_art(Some(&cover_art_path), &metadata.artwork_url).await.context(
-        "Failed to download cover art in write_metadata function."
-    )?;
+        download_cover_art(Some(&cover_art_path), &metadata.artwork_url).await.context(
+            "Failed to download cover art in write_metadata function."
+        )?;
+
+        cover_art_path
+    };
 
     let path = path.to_path_buf();
     let metadata = metadata.clone();

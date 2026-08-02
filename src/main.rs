@@ -22,6 +22,8 @@ use metadata_provider::MetadataProvider;
 use models::{ DownloadEvent };
 use cache_client::{ try_download_from_cache, claim_id, upload_to_cache, get_cached_metadata };
 
+use crate::models::Metadata;
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cli = cli::Cli::parse();
@@ -242,23 +244,33 @@ async fn main() -> anyhow::Result<()> {
 
                     set.spawn(async move {
                         let taggin_start = std::time::Instant::now();
-                        let results = ItunesProvider.find_metadata(&download).await?;
+                        let mut results = ItunesProvider.find_metadata(&download).await?;
 
-                        if results.is_empty() {
+                        let metadata = if results.is_empty() {
                             mp_clone.println(
                                 format!("iTunes returned 0 results for {}.", download.title)
                             )?;
-                            mp_clone.remove(&bar_clone);
-                            return Ok(());
-                        }
 
-                        write_metadata(&results[0], &download.file_path).await.context(
+                            mp_clone.println("Going with default setting")?;
+
+                            Metadata {
+                                artist_name: download.channel.clone(),
+                                track_name: download.title.clone(),
+                                collection_name: "404".to_string(),
+                                primary_genre: "404".to_string(),
+                                artwork_url: "default_cover_at.jpg".to_string(),
+                            }
+                        } else {
+                            results.remove(0)
+                        };
+
+                        write_metadata(&metadata, &download.file_path).await.context(
                             "Failed to write metadata to the downloaded file"
                         )?;
 
                         let final_file_path = rename_audio_file(
                             &download.file_path,
-                            &results[0]
+                            &metadata
                         ).await.with_context(||
                             format!("Failed to rename {:?}", &download.file_path)
                         )?;
@@ -271,7 +283,7 @@ async fn main() -> anyhow::Result<()> {
 
                         if let Some(vid) = task_video_id {
                             mp_clone.println(format!("Uploading to cache server..."))?;
-                            match upload_to_cache(&vid, &final_file_path, &results[0]).await {
+                            match upload_to_cache(&vid, &final_file_path, &metadata).await {
                                 Ok(_) =>
                                     mp_clone.println(format!("Successfully uploaded to cache!"))?,
                                 Err(e) =>
@@ -281,7 +293,7 @@ async fn main() -> anyhow::Result<()> {
                             }
                         }
 
-                        if let Err(e) = history::append_to_history(&results[0]).await {
+                        if let Err(e) = history::append_to_history(&metadata).await {
                             mp_clone.println(format!("Failed to save to history: {:?}", e))?;
                         }
 
