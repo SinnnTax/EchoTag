@@ -5,13 +5,25 @@ use futures_util::StreamExt;
 use reqwest::StatusCode;
 use crate::models::Metadata;
 
-const SERVER_URL: &'static str = "http://127.0.0.1:3000";
+fn get_server_url() -> anyhow::Result<String> {
+    dotenvy
+        ::dotenv()
+        .context(
+            "Failed to load .env file. Please run 'echotag config --setup-cache-server' first."
+        )?;
+    let ip = std::env
+        ::var("CACHE_SERVER_IP")
+        .context(
+            "CACHE_SERVER_IP not found in .env, Please run 'echotag config --setup-cache-server' first."
+        )?;
+    Ok(format!("http://{}:3000", ip))
+}
 
 pub async fn try_download_from_cache(
     video_id: &str,
     save_dir: &Path
 ) -> anyhow::Result<Option<PathBuf>> {
-    let url = format!("{}/cache/{}", SERVER_URL, video_id);
+    let url = format!("{}/cache/{}", get_server_url()?, video_id);
 
     let response = reqwest::get(&url).await?;
 
@@ -52,7 +64,7 @@ pub async fn try_download_from_cache(
 }
 
 pub async fn claim_id(video_id: &str) -> anyhow::Result<bool> {
-    let url = format!("{}/cache/{}/claim", SERVER_URL, video_id);
+    let url = format!("{}/cache/{}/claim", get_server_url()?, video_id);
 
     let client = reqwest::Client::new();
     let response = client.post(&url).send().await?;
@@ -65,7 +77,7 @@ pub async fn upload_to_cache(
     file_path: &Path,
     metadata: &Metadata
 ) -> anyhow::Result<()> {
-    let url = format!("{}/cache/{}/upload", SERVER_URL, video_id);
+    let url = format!("{}/cache/{}/upload", get_server_url()?, video_id);
 
     let file_bytes = tokio::fs::read(file_path).await?;
 
@@ -99,7 +111,7 @@ pub async fn upload_to_cache(
 }
 
 pub async fn get_cached_metadata(video_id: &str) -> anyhow::Result<Option<Metadata>> {
-    let url = format!("{}/cache/{}/metadata", SERVER_URL, video_id);
+    let url = format!("{}/cache/{}/metadata", get_server_url()?, video_id);
 
     let response = reqwest::get(&url).await?;
 
