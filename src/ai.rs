@@ -48,7 +48,7 @@ async fn search_youtube(
 Use this tool ONLY after you have called 'search_youtube' and selected the best URL from the results. 
 Do not guess URLs; only pass URLs that were returned by the search tool.
 
-CRITICAL RULE: Do NOT guess, hallucinate, or make up URLs. You must ONLY pass URLs that were literally returned by the 'search_youtube' tool. If you do not have a valid URL from the search tool, do not call this tool.
+CRITICAL RULE: You must copy the EXACT URL string that was returned by the 'search_youtube' tool. Do NOT use URLs from your memory, do NOT guess, and do NOT use URLs from previous turns. Copy-paste the exact URL string from the most recent search results.
 
 Parameters:
 - url: The exact YouTube video URL string returned by the search tool.",
@@ -59,18 +59,22 @@ async fn download_url(url: String) -> Result<String, rig::tool::ToolError> {
         ::current_exe()
         .map_err(|e| rig::tool::ToolError::ToolCallError(e.to_string().into()))?;
 
-    tokio::process::Command
+    println!("\n");
+
+    let status = tokio::process::Command
         ::new(exe_path)
         .arg("download")
         .arg("-c")
         .arg("cookies.txt")
         .arg(&url)
-        .spawn()
+        .status().await
         .map_err(|e| rig::tool::ToolError::ToolCallError(e.to_string().into()))?;
 
-    Ok(
-        format!("Successfully started downloading {} in the background. Tell the user it is downloading.", url)
-    )
+    if status.success() {
+        Ok(format!("Successfully finished downloading {}.", url))
+    } else {
+        Err(rig::tool::ToolError::ToolCallError("The download process failed.".to_string().into()))
+    }
 }
 
 pub async fn start_chat() -> anyhow::Result<()> {
