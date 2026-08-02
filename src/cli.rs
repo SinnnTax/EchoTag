@@ -27,10 +27,15 @@ pub enum Command {
         #[arg(num_args = 1.., required = true)]
         paths: Vec<PathBuf>,
     },
-    /// Configure AI provider and API key for the chat feature
+    /// Configure AI provider and cache server settings
     Config {
+        /// Set up or change the AI provider (Gemini, OpenAI, Anthropic, Ollama) and API key/model
         #[arg(long)]
-        setup: bool,
+        setup_model: bool,
+
+        /// Set up or change the cache server IP address
+        #[arg(long)]
+        setup_cache_server: bool,
     },
     /// Chat with the AI to get music recommendations
     Chat,

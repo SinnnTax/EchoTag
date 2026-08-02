@@ -316,11 +316,15 @@ async fn main() -> anyhow::Result<()> {
         cli::Command::Update { paths } => {
             println!("Updating for {paths:?}");
         }
-        cli::Command::Config { setup } => {
-            if setup {
+        cli::Command::Config { setup_model, setup_cache_server } => {
+            if setup_model {
                 config::setup_provider()?;
+            } else if setup_cache_server {
+                config::setup_cache_server()?;
             } else {
-                println!("Use --setup flag to configure your AI provider.");
+                println!(
+                    "Use --setup-model flag to configure your AI provider.\nUse --setup-cache flag to configure cache server."
+                );
             }
         }
         cli::Command::Chat => {
