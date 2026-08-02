@@ -32,7 +32,7 @@ pub async fn try_download_from_cache(
     }
 
     if !response.status().is_success() {
-        bail!("Cache server returned error: {}", response.status());
+        bail!("{}", response.status());
     }
 
     let filename = response
@@ -104,7 +104,7 @@ pub async fn upload_to_cache(
     let response = client.post(&url).multipart(form).send().await?;
 
     if !response.status().is_success() {
-        bail!("Failed to upload to cache: {}", response.status());
+        bail!("{}", response.status());
     }
 
     Ok(())
@@ -120,7 +120,7 @@ pub async fn get_cached_metadata(video_id: &str) -> anyhow::Result<Option<Metada
     }
 
     if !response.status().is_success() {
-        bail!("Cache server returned error: {}", response.status());
+        bail!("{}", response.status());
     }
 
     let metadata = response.json::<Metadata>().await?;

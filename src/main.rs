@@ -142,7 +142,10 @@ async fn main() -> anyhow::Result<()> {
                         }
                         Err(e) => {
                             mp.println(
-                                format!("Cache server error: {:?}. Falling back to YouTube.", e)
+                                format!(
+                                    "Cache server returned error: {:?}. Falling back to YouTube.",
+                                    e
+                                )
                             )?;
                         }
                     }
