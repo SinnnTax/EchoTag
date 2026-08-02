@@ -258,7 +258,7 @@ async fn main() -> anyhow::Result<()> {
                                 track_name: download.title.clone(),
                                 collection_name: "404".to_string(),
                                 primary_genre: "404".to_string(),
-                                artwork_url: "default_cover_at.jpg".to_string(),
+                                artwork_url: "default_cover_art.jpg".to_string(),
                             }
                         } else {
                             results.remove(0)
