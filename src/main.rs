@@ -63,7 +63,7 @@ async fn main() -> anyhow::Result<()> {
                             mp.println(format!("Already cached! Downloaded to: {:?}", path))?;
                             match get_cached_metadata(&video_id).await {
                                 Ok(Some(meta)) => {
-                                    if let Err(e) = history::append_to_history(&meta).await {
+                                    if let Err(e) = history::append_to_history(&meta, None).await {
                                         mp.println(format!("Failed to save to history: {:?}", e))?;
                                     }
                                 }
@@ -296,7 +296,7 @@ async fn main() -> anyhow::Result<()> {
                             }
                         }
 
-                        if let Err(e) = history::append_to_history(&metadata).await {
+                        if let Err(e) = history::append_to_history(&metadata, None).await {
                             mp_clone.println(format!("Failed to save to history: {:?}", e))?;
                         }
 

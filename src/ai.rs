@@ -84,7 +84,7 @@ pub async fn start_chat() -> anyhow::Result<()> {
         ::var("AI_PROVIDER")
         .context("AI_PROVIDER not found in .env. Run `echotag config --set-api-key` first.")?;
 
-    let preamble_text = history::get_history_prompt().await?;
+    let preamble_text = history::get_history_prompt(None).await?;
 
     match provider_str.as_str() {
         "openai" => {

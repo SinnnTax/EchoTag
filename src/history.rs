@@ -4,8 +4,8 @@ use tokio::io::AsyncWriteExt;
 use std::collections::HashMap;
 use crate::models::Metadata;
 
-pub async fn append_to_history(meta: &Metadata) -> anyhow::Result<()> {
-    let path = Path::new("./history.ndjson");
+pub async fn append_to_history(meta: &Metadata, path: Option<&Path>) -> anyhow::Result<()> {
+    let path = path.unwrap_or_else(|| Path::new("./history.ndjson"));
 
     if path.exists() {
         if let Ok(content) = tokio::fs::read_to_string(path).await {
@@ -37,8 +37,8 @@ pub async fn append_to_history(meta: &Metadata) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub async fn get_history_prompt() -> anyhow::Result<String> {
-    let path = Path::new("./history.ndjson");
+pub async fn get_history_prompt(path: Option<&Path>) -> anyhow::Result<String> {
+    let path = path.unwrap_or_else(|| Path::new("./history.ndjson"));
 
     if !path.exists() {
         return Ok(
