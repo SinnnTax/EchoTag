@@ -107,3 +107,78 @@ pub async fn get_history_prompt(path: Option<&Path>) -> anyhow::Result<String> {
 
     Ok(prompt)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::Metadata;
+    use std::fs;
+
+    fn make_test_metadata(artist: &str, track: &str) -> Metadata {
+        Metadata {
+            artist_name: artist.to_string(),
+            track_name: track.to_string(),
+            collection_name: "Test Album".to_string(),
+            artwork_url: "http://example.com/art.jpg".to_string(),
+            primary_genre: "Test Genre".to_string(),
+        }
+    }
+
+    #[tokio::test]
+    async fn append_to_history_writes_and_prevents_duplicates() {
+        let mut temp_path = std::env::temp_dir();
+        temp_path.push("echotag_history_test.ndjson");
+
+        let metadata = make_test_metadata("Yeat", "Nvr Again");
+
+        append_to_history(&metadata, Some(&temp_path)).await.expect("First append failed");
+
+        assert!(temp_path.exists(), "History file was not created");
+
+        let content1 = fs::read_to_string(&temp_path).expect("Failed to read file");
+        assert!(content1.contains("Nvr Again"), "Track is missing");
+
+        append_to_history(&metadata, Some(&temp_path)).await.expect("Second append failed");
+
+        let content2 = fs::read_to_string(&temp_path).expect("Failed to read file");
+        assert_eq!(content1, content2, "A duplicate entry was written!");
+
+        let _ = fs::remove_file(&temp_path);
+    }
+
+    #[tokio::test]
+    async fn get_history_prompt_returns_default_when_no_file() {
+        let mut temp_path = std::env::temp_dir();
+        temp_path.push("echotag_history_nonexistent.ndjson");
+        let _ = fs::remove_file(&temp_path);
+
+        let prompt = get_history_prompt(Some(&temp_path)).await.expect(
+            "get_history_prompt should succeed even if the file does not exist"
+        );
+
+        assert!(prompt.contains("no listening history yet"), "Default prompt was wrong");
+    }
+
+    #[tokio::test]
+    async fn get_history_prompt_counts_artists_and_tracks_correctly() {
+        let mut temp_path = std::env::temp_dir();
+        temp_path.push("echotag_history_logic_test.ndjson");
+        let _ = fs::remove_file(&temp_path);
+
+        let meta1 = make_test_metadata("Yeat", "2093");
+        let meta2 = make_test_metadata("Yeat", "Pulled In First");
+        let meta3 = make_test_metadata("Yeat", "Nvr Again");
+
+        append_to_history(&meta1, Some(&temp_path)).await.unwrap();
+        append_to_history(&meta2, Some(&temp_path)).await.unwrap();
+        append_to_history(&meta3, Some(&temp_path)).await.unwrap();
+
+        let prompt = get_history_prompt(Some(&temp_path)).await.unwrap();
+
+        assert!(prompt.contains("3 song(s) total"), "Wrong total song count");
+        assert!(prompt.contains("Yeat"), "Top artist missing from prompt");
+        assert!(prompt.contains("2093"), "Track missing from prompt");
+
+        let _ = fs::remove_file(&temp_path);
+    }
+}
