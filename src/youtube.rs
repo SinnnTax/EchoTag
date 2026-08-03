@@ -266,3 +266,76 @@ pub async fn search(
 
     Ok(result)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_extract_video_id() {
+        let test_cases = vec![
+            // Standard YouTube URL
+            ("https://www.youtube.com/watch?v=dQw4w9WgXcQ", Some("dQw4w9WgXcQ".to_string())),
+            // Short YouTube URL
+            ("https://youtu.be/dQw4w9WgXcQ", Some("dQw4w9WgXcQ".to_string())),
+            // URL with extra parameters
+            ("https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=43s", Some("dQw4w9WgXcQ".to_string())),
+            // Invalid URL
+            ("https://google.com", None),
+            // Empty string
+            ("", None)
+        ];
+
+        for (input, expected) in test_cases {
+            let result = extract_video_id(input);
+            assert_eq!(
+                result,
+                expected,
+                "Failed for input: '{}'. Expected {:?}, got {:?}",
+                input,
+                expected,
+                result
+            );
+        }
+    }
+
+    #[test]
+    fn test_parse_size() {
+        let test_cases = vec![
+            ("100.5KiB", (100.5 * 1024.0) as u64),
+            ("10MiB", 10 * 1024 * 1024),
+            ("2GiB", 2 * 1024 * 1024 * 1024),
+            ("500", 500),
+            ("0KiB", 0)
+        ];
+
+        for (input, expected) in test_cases {
+            let result = parse_size(input);
+            assert_eq!(
+                result,
+                expected,
+                "Failed for input: '{}'. Expected {}, got {}",
+                input,
+                expected,
+                result
+            );
+        }
+    }
+
+    #[test]
+    fn test_parse_eta() {
+        let test_cases = vec![("01:20", 80), ("00:05", 5), ("01:00:00", 3600), ("invalid", 0)];
+
+        for (input, expected) in test_cases {
+            let result = parse_eta(input);
+            assert_eq!(
+                result,
+                expected,
+                "Failed for input: '{}'. Expected {}, got {}",
+                input,
+                expected,
+                result
+            );
+        }
+    }
+}
