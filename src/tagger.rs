@@ -130,3 +130,59 @@ fn sanitize_filename(name: &str) -> String {
         .trim()
         .to_string()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sanitize_filename_handles_various_inputs() {
+        let test_cases = vec![
+            ("Artist/Name: <Bad>*Song?", "Artist Name   Bad  Song"),
+            ("Line\nBreak\tTab", "Line Break Tab"),
+            ("/?*Bad Start and End*?/", "Bad Start and End"),
+            ("", ""),
+            ("Artist - Track (2026) [Official]", "Artist - Track (2026) [Official]")
+        ];
+
+        for (input, expected) in test_cases {
+            let result = sanitize_filename(input);
+            assert_eq!(
+                result,
+                expected,
+                "Failed for input: '{}'. Expected '{}', got '{}'",
+                input,
+                expected,
+                result
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn rename_audio_file_renames_correctly() {
+        let mut old_path = std::env::temp_dir();
+        old_path.push("echotag_test_old_audio.mp3");
+
+        std::fs::write(&old_path, b"fake audio data").expect("Failed to write dummy file");
+
+        let metadata = Metadata {
+            artist_name: "Yeat".to_string(),
+            track_name: "Talk".to_string(),
+            collection_name: "Lyfë".to_string(),
+            artwork_url: "".to_string(),
+            primary_genre: "".to_string(),
+        };
+
+        let new_path = rename_audio_file(&old_path, &metadata).await.expect(
+            "rename_audio_file should have succeeded"
+        );
+
+        assert_eq!(new_path.file_name().unwrap().to_str().unwrap(), "Yeat - Talk - (Lyfë).mp3");
+
+        assert!(!old_path.exists(), "Old file still exists!");
+
+        assert!(new_path.exists(), "New file was not created!");
+
+        let _ = std::fs::remove_file(&new_path);
+    }
+}
