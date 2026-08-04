@@ -326,7 +326,7 @@ async fn main() -> anyhow::Result<()> {
                 config::setup_cache_server()?;
             } else {
                 println!(
-                    "Use --setup-model flag to configure your AI provider.\nUse --setup-cache flag to configure cache server."
+                    "Use --setup-model flag to configure your AI provider.\nUse --setup-cache-server flag to configure cache server."
                 );
             }
         }
