@@ -313,6 +313,25 @@ async fn main() -> anyhow::Result<()> {
                 }
             }
 
+            let mut directory_files = match tokio::fs::read_dir("./").await {
+                Ok(d) => d,
+                Err(e) => {
+                    eprintln!("Failed to read directory for cleanup: {}", e);
+                    std::process::exit(0);
+                }
+            };
+
+            while let Ok(Some(entry)) = directory_files.next_entry().await {
+                let path = entry.path();
+                let ext = path.extension().and_then(|e| e.to_str());
+
+                if ext == Some("part") || ext == Some("webm") {
+                    if tokio::fs::remove_file(&path).await.is_ok() {
+                        println!("Cleaned up partial file: {}", path.display());
+                    }
+                }
+            }
+
             std::process::exit(0);
         }
         cli::Command::Update { paths } => {
