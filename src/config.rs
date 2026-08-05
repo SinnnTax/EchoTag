@@ -64,7 +64,17 @@ pub fn setup_provider() -> anyhow::Result<()> {
 }
 
 pub fn setup_cache_server() -> anyhow::Result<()> {
-    let env_file = std::fs::read_to_string("./.env").context("Couldn't read env file")?;
+    let env_file = match std::fs::read_to_string("./.env") {
+        Ok(s) => s,
+        Err(e) => {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                String::new()
+            } else {
+                bail!("Couldn't read .env file")
+            }
+        }
+    };
+
     let mut splitted_env: Vec<&str> = env_file.split("CACHE_SERVER_IP=").collect();
     if splitted_env.len() != 2 {
         println!("No cache server IP configured yet.");
