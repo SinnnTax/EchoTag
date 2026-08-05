@@ -10,19 +10,18 @@ mod config;
 mod history;
 mod ai;
 
+use std::io::Write;
 use anyhow::Context;
 use clap::Parser;
 use tokio::task::JoinSet;
-use tokio::io::{ AsyncBufReadExt, BufReader };
+use tokio::io::AsyncBufReadExt;
 use indicatif::{ ProgressBar, ProgressStyle, MultiProgress, MultiProgressAlignment };
 use youtube::{ download_youtube_audio, extract_video_id };
 use itunes::ItunesProvider;
 use tagger::{ write_metadata, rename_audio_file };
 use metadata_provider::MetadataProvider;
-use models::{ DownloadEvent };
+use models::{ DownloadEvent, Metadata };
 use cache_client::{ try_download_from_cache, claim_id, upload_to_cache, get_cached_metadata };
-
-use crate::models::Metadata;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -35,22 +34,10 @@ async fn main() -> anyhow::Result<()> {
             let mp = MultiProgress::new();
             mp.set_alignment(MultiProgressAlignment::Top);
 
-            // used unbounded mpsc so the keyboard task never blocks waiting for the receiver
-            let (skip_tx, mut skip_rx) = tokio::sync::mpsc::unbounded_channel::<()>();
-            tokio::spawn(async move {
-                let mut reader = BufReader::new(tokio::io::stdin());
-                let mut line = String::new();
-                loop {
-                    line.clear();
-                    if reader.read_line(&mut line).await.is_ok() {
-                        if skip_tx.send(()).is_err() {
-                            break;
-                        }
-                    }
-                }
-            });
+            let stdin = tokio::io::stdin();
+            let mut stdin_reader = tokio::io::BufReader::new(stdin);
+            let mut skip_line = String::new();
 
-            // downloading sequentially to avoid youtube's anti-bot 429 error
             for url in urls {
                 let mut video_id_opt: Option<String> = None;
 
@@ -154,8 +141,6 @@ async fn main() -> anyhow::Result<()> {
                     mp.println(format!("Could not extract YouTube ID from URL. Skipping cache."))?;
                 }
 
-                while skip_rx.try_recv().is_ok() {}
-
                 mp.println(format!("Starting download for: {}", url))?;
 
                 let cookies = cookies.clone();
@@ -175,6 +160,9 @@ async fn main() -> anyhow::Result<()> {
 
                 let mut downloaded_audio = None;
                 let mut download_size = 0;
+                let mut skipped = false;
+
+                skip_line.clear();
 
                 loop {
                     tokio::select! {
@@ -205,16 +193,23 @@ async fn main() -> anyhow::Result<()> {
                                 break;
                             }
                         }
-                        _ = skip_rx.recv() => {
-                            if let Some(cancel) = stream.cancel.take() {
-                                let _ = cancel.send(());
-
-                                mp.remove(&bar);
-                                mp.println(format!("Skipped {}", url))?;
-                                break;
+                        input = stdin_reader.read_line(&mut skip_line) => {
+                            if input.is_ok() {
+                                if let Some(cancel) = stream.cancel.take() {
+                                    let _ = cancel.send(());
+                                    skipped = true;
+                                    mp.remove(&bar);
+                                    mp.println(format!("Skipped {}", url))?;
+                                    break;
+                                }
                             }
                         }
+
                     }
+                }
+
+                if skipped {
+                    continue;
                 }
 
                 if let Some(download) = downloaded_audio {
@@ -239,6 +234,107 @@ async fn main() -> anyhow::Result<()> {
                         )
                     )?;
 
+                    let mut results = ItunesProvider.find_metadata(&download).await?;
+                    let mut metadata = if results.is_empty() {
+                        mp.println(
+                            format!(
+                                "iTunes returned 0 results for {}.\nGoing with default settings.",
+                                download.title
+                            )
+                        )?;
+                        Metadata {
+                            artist_name: download.channel.clone(),
+                            track_name: download.title.clone(),
+                            collection_name: "404".to_string(),
+                            primary_genre: "404".to_string(),
+                            artwork_url: "default_cover_art.jpg".to_string(),
+                        }
+                    } else {
+                        results.remove(0)
+                    };
+
+                    let mut metadata_verified = false;
+                    let mut input = String::new();
+
+                    while !metadata_verified {
+                        mp.suspend(|| {
+                            println!("--------------------------------------------------");
+                            println!("Proposed metadata for '{}'", download.title);
+                            println!("\tArtist: {}", metadata.artist_name);
+                            println!("\tTrack:  {}", metadata.track_name);
+                            println!("\tAlbum:  {}", metadata.collection_name);
+                            println!("\tGenre:  {}", metadata.primary_genre);
+                            println!("--------------------------------------------------");
+                            input = prompt_user(
+                                "Is this correct? [y]es / [n]ew search / [m]anual entry: ",
+                                false
+                            ).expect("Failed to get input.");
+                        });
+
+                        let answer = input.trim().to_lowercase();
+
+                        if answer.starts_with("y") {
+                            metadata_verified = true;
+                        } else if answer.starts_with("n") {
+                            mp.suspend(|| {
+                                input = prompt_user(
+                                    "Enter a search query to find the correct metadata (e.g. Artist - Song): ",
+                                    false
+                                ).expect("Failed to get input.");
+                            });
+
+                            let query = input.trim().to_string();
+                            if !query.is_empty() {
+                                match ItunesProvider.search(&query).await {
+                                    Ok(mut new_results) if !new_results.is_empty() => {
+                                        metadata = new_results.remove(0);
+                                        mp.println("Found new metadata. Reviewing...")?;
+                                    }
+                                    Ok(_) => mp.println("No results found for that query.")?,
+                                    Err(e) => mp.println(format!("Search failed: {:?}", e))?,
+                                }
+                            }
+                        } else if answer.starts_with("m") {
+                            mp.suspend(|| {
+                                println!("--- Manual Metadata Entry ---");
+                                let artist_name = prompt_user("Artist: ", false).expect(
+                                    "Failed to get input."
+                                );
+                                let track_name = prompt_user("Track: ", false).expect(
+                                    "Failed to get input."
+                                );
+                                let collection_name = prompt_user("Album: ", false).expect(
+                                    "Failed to get input."
+                                );
+                                let primary_genre = prompt_user("Genre: ", false).expect(
+                                    "Failed to get input."
+                                );
+
+                                let artwork = prompt_user(
+                                    "Artwork URL (leave empty for default): ",
+                                    true
+                                ).expect("Failed to get input.");
+
+                                let artwork_url = if artwork.trim().is_empty() {
+                                    "default_cover_art.jpg".to_string()
+                                } else {
+                                    artwork.trim().to_string()
+                                };
+
+                                metadata = Metadata {
+                                    artist_name,
+                                    track_name,
+                                    collection_name,
+                                    primary_genre,
+                                    artwork_url,
+                                };
+                            });
+                            metadata_verified = true;
+                        } else {
+                            mp.println("Invalid input. Please enter 'y', 'n', or 'm'.")?;
+                        }
+                    }
+
                     let mp_clone = mp.clone();
                     let bar_clone = bar.clone();
 
@@ -246,25 +342,6 @@ async fn main() -> anyhow::Result<()> {
 
                     set.spawn(async move {
                         let taggin_start = std::time::Instant::now();
-                        let mut results = ItunesProvider.find_metadata(&download).await?;
-
-                        let metadata = if results.is_empty() {
-                            mp_clone.println(
-                                format!("iTunes returned 0 results for {}.", download.title)
-                            )?;
-
-                            mp_clone.println("Going with default setting")?;
-
-                            Metadata {
-                                artist_name: download.channel.clone(),
-                                track_name: download.title.clone(),
-                                collection_name: "404".to_string(),
-                                primary_genre: "404".to_string(),
-                                artwork_url: "default_cover_art.jpg".to_string(),
-                            }
-                        } else {
-                            results.remove(0)
-                        };
 
                         write_metadata(&metadata, &download.file_path).await.context(
                             "Failed to write metadata to the downloaded file"
@@ -354,4 +431,18 @@ async fn main() -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+fn prompt_user(prompt: &str, allow_empty: bool) -> anyhow::Result<String> {
+    loop {
+        print!("{}", prompt);
+        std::io::stdout().flush()?;
+        let mut input = String::new();
+        std::io::stdin().read_line(&mut input)?;
+        let trimmed = input.trim().to_string();
+        if !trimmed.is_empty() || allow_empty {
+            return Ok(trimmed);
+        }
+        println!("Field cannot be empty. Please try again.");
+    }
 }
