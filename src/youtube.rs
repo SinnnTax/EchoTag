@@ -35,6 +35,7 @@ async fn download(
     let mut ytdlp = Command::new("yt-dlp");
 
     ytdlp.env("PYTHONUNBUFFERED", "1");
+    ytdlp.env("PYTHONIOENCODING", "utf-8");
 
     ytdlp.args([
         "-x",
