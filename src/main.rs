@@ -208,11 +208,10 @@ async fn main() -> anyhow::Result<()> {
                         _ = skip_rx.recv() => {
                             if let Some(cancel) = stream.cancel.take() {
                                 let _ = cancel.send(());
-                                if downloaded_audio.is_none() {
-                                    mp.remove(&bar);
-                                    mp.println(format!("Skipped {}", url))?;
-                                    break;
-                                }
+
+                                mp.remove(&bar);
+                                mp.println(format!("Skipped {}", url))?;
+                                break;
                             }
                         }
                     }
