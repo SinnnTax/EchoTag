@@ -15,7 +15,13 @@ use anyhow::Context;
 use clap::Parser;
 use tokio::task::JoinSet;
 use tokio::io::AsyncBufReadExt;
-use indicatif::{ ProgressBar, ProgressStyle, MultiProgress, MultiProgressAlignment };
+use indicatif::{
+    ProgressBar,
+    ProgressStyle,
+    MultiProgress,
+    MultiProgressAlignment,
+    ProgressDrawTarget,
+};
 use youtube::{ download_youtube_audio, extract_video_id };
 use itunes::ItunesProvider;
 use tagger::{ write_metadata, rename_audio_file };
@@ -234,6 +240,10 @@ async fn main() -> anyhow::Result<()> {
                         )
                     )?;
 
+                    bar.disable_steady_tick();
+                    bar.set_draw_target(ProgressDrawTarget::hidden());
+                    println!();
+
                     let mut results = ItunesProvider.find_metadata(&download).await?;
                     let mut metadata = if results.is_empty() {
                         mp.println(
@@ -254,90 +264,116 @@ async fn main() -> anyhow::Result<()> {
                     };
 
                     let mut metadata_verified = false;
-                    let mut input = String::new();
+                    let mut input;
 
                     while !metadata_verified {
-                        mp.suspend(|| {
-                            println!("--------------------------------------------------");
-                            println!("Proposed metadata for '{}'", download.title);
-                            println!("\tArtist: {}", metadata.artist_name);
-                            println!("\tTrack:  {}", metadata.track_name);
-                            println!("\tAlbum:  {}", metadata.collection_name);
-                            println!("\tGenre:  {}", metadata.primary_genre);
-                            println!("--------------------------------------------------");
-                            input = prompt_user(
-                                "Is this correct? [y]es / [n]ew search / [m]anual entry: ",
-                                false
-                            ).expect("Failed to get input.");
-                        });
+                        println!("--------------------------------------------------");
+                        println!("Proposed metadata for '{}'", download.title);
+                        println!("\tArtist: {}", metadata.artist_name);
+                        println!("\tTrack:  {}", metadata.track_name);
+                        println!("\tAlbum:  {}", metadata.collection_name);
+                        println!("\tGenre:  {}", metadata.primary_genre);
+                        println!("--------------------------------------------------");
+
+                        input = prompt_user(
+                            &mut stdin_reader,
+                            "Is this correct? [y]es / [n]ew search / [m]anual entry: ",
+                            false
+                        ).await?;
 
                         let answer = input.trim().to_lowercase();
 
                         if answer.starts_with("y") {
                             metadata_verified = true;
                         } else if answer.starts_with("n") {
-                            mp.suspend(|| {
-                                input = prompt_user(
-                                    "Enter a search query to find the correct metadata (e.g. Artist - Song): ",
-                                    false
-                                ).expect("Failed to get input.");
-                            });
+                            input = prompt_user(
+                                &mut stdin_reader,
+                                "Enter a search query to find the correct metadata (e.g. Artist - Song): ",
+                                false
+                            ).await?;
 
                             let query = input.trim().to_string();
                             if !query.is_empty() {
+                                bar.set_message("Searching for Metadata...");
+                                bar.enable_steady_tick(std::time::Duration::from_millis(100));
+                                bar.set_draw_target(ProgressDrawTarget::stderr());
                                 match ItunesProvider.search(&query).await {
                                     Ok(mut new_results) if !new_results.is_empty() => {
                                         metadata = new_results.remove(0);
+
+                                        bar.disable_steady_tick();
+                                        bar.set_draw_target(ProgressDrawTarget::hidden());
+                                        println!();
+
                                         mp.println("Found new metadata. Reviewing...")?;
                                     }
-                                    Ok(_) => mp.println("No results found for that query.")?,
-                                    Err(e) => mp.println(format!("Search failed: {:?}", e))?,
+                                    Ok(_) => {
+                                        bar.disable_steady_tick();
+                                        bar.set_draw_target(ProgressDrawTarget::hidden());
+                                        println!();
+                                        println!("No results found for that query.");
+                                    }
+                                    Err(e) => {
+                                        bar.disable_steady_tick();
+                                        bar.set_draw_target(ProgressDrawTarget::hidden());
+                                        println!();
+
+                                        println!("Search failed: {:?}", e);
+                                    }
                                 }
                             }
                         } else if answer.starts_with("m") {
-                            mp.suspend(|| {
-                                println!("--- Manual Metadata Entry ---");
-                                let artist_name = prompt_user("Artist: ", false).expect(
-                                    "Failed to get input."
-                                );
-                                let track_name = prompt_user("Track: ", false).expect(
-                                    "Failed to get input."
-                                );
-                                let collection_name = prompt_user("Album: ", false).expect(
-                                    "Failed to get input."
-                                );
-                                let primary_genre = prompt_user("Genre: ", false).expect(
-                                    "Failed to get input."
-                                );
+                            println!("--- Manual Metadata Entry ---");
+                            let artist_name = prompt_user(
+                                &mut stdin_reader,
+                                "Artist: ",
+                                false
+                            ).await?;
+                            let track_name = prompt_user(
+                                &mut stdin_reader,
+                                "Track: ",
+                                false
+                            ).await?;
+                            let collection_name = prompt_user(
+                                &mut stdin_reader,
+                                "Album: ",
+                                false
+                            ).await?;
+                            let primary_genre = prompt_user(
+                                &mut stdin_reader,
+                                "Genre: ",
+                                false
+                            ).await?;
 
-                                let artwork = prompt_user(
-                                    "Artwork URL (leave empty for default): ",
-                                    true
-                                ).expect("Failed to get input.");
+                            let artwork = prompt_user(
+                                &mut stdin_reader,
+                                "Artwork URL (leave empty for default): ",
+                                true
+                            ).await?;
 
-                                let artwork_url = if artwork.trim().is_empty() {
-                                    "default_cover_art.jpg".to_string()
-                                } else {
-                                    artwork.trim().to_string()
-                                };
+                            let artwork_url = if artwork.trim().is_empty() {
+                                "default_cover_art.jpg".to_string()
+                            } else {
+                                artwork.trim().to_string()
+                            };
 
-                                metadata = Metadata {
-                                    artist_name,
-                                    track_name,
-                                    collection_name,
-                                    primary_genre,
-                                    artwork_url,
-                                };
-                            });
+                            metadata = Metadata {
+                                artist_name,
+                                track_name,
+                                collection_name,
+                                primary_genre,
+                                artwork_url,
+                            };
+
                             metadata_verified = true;
                         } else {
-                            mp.println("Invalid input. Please enter 'y', 'n', or 'm'.")?;
+                            println!("Invalid input. Please enter 'y', 'n', or 'm'.");
                         }
                     }
 
-                    let mp_clone = mp.clone();
-                    let bar_clone = bar.clone();
+                    mp.remove(&bar);
 
+                    let mp_clone = mp.clone();
                     let task_video_id = video_id_opt.clone();
 
                     set.spawn(async move {
@@ -355,7 +391,6 @@ async fn main() -> anyhow::Result<()> {
                         )?;
 
                         let elapsed = taggin_start.elapsed();
-                        mp_clone.remove(&bar_clone);
                         mp_clone.println(
                             format!("Tagged \"{}\" in {:.2?} seconds", download.title, elapsed)
                         )?;
@@ -433,12 +468,17 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn prompt_user(prompt: &str, allow_empty: bool) -> anyhow::Result<String> {
+async fn prompt_user(
+    reader: &mut tokio::io::BufReader<tokio::io::Stdin>,
+    prompt: &str,
+    allow_empty: bool
+) -> anyhow::Result<String> {
     loop {
         print!("{}", prompt);
         std::io::stdout().flush()?;
         let mut input = String::new();
-        std::io::stdin().read_line(&mut input)?;
+        reader.read_line(&mut input).await?;
+
         let trimmed = input.trim().to_string();
         if !trimmed.is_empty() || allow_empty {
             return Ok(trimmed);
