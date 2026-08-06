@@ -1,27 +1,3 @@
-[package]
-name = "EchoTag"
-version = "0.1.0"
-edition = "2024"
-
-[[bin]]
-name = "cache_server"
-path = "src/bin/cache_server.rs"
-
-[dependencies]
-anyhow = "1.0.103"
-axum = { version = "0.8.9", features = ["multipart"] }
-chrono = "0.4.45"
-clap = { version = "4.6.2", features = ["derive"] }
-dotenvy = "0.15.7"
-futures-util = "0.3.33"
-indicatif = "0.18.6"
-lofty = "0.24.0"
-regex = "1.13.1"
-reqwest = { version = "0.13.4", features = ["json", "stream", "socks", "multipart"] }
-rig = "0.40.0"
-serde = { version = "1.0.228", features = ["derive"] }
-serde_json = "1.0.150"
-sqlx = { version = "0.9.0", features = ["sqlite", "runtime-tokio"] }
-termimad = "0.35.1"
-tokio = { version = "1.53.0", features = ["full"] }
-tokio-util = { version = "0.7.19", features = ["io"] }
+[workspace]
+members = ["cli"]
+resolver = "3"
