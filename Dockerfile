@@ -9,7 +9,7 @@ WORKDIR /app
 COPY . .
 
 # Build ONLY the cache_server binary in release mode
-RUN cargo build --release --bin cache_server
+RUN cargo build --release -p EchoTag --bin cache_server
 
 # ==========================================
 # Stage 2: The Runtime
