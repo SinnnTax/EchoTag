@@ -1,6 +1,6 @@
 use serde::Deserialize;
 use anyhow::Context;
-use crate::models::Metadata;
+use shared::models::Metadata;
 use crate::metadata_provider::MetadataProvider;
 
 pub struct ItunesProvider;

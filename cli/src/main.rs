@@ -3,7 +3,6 @@ mod itunes;
 mod tagger;
 mod cli;
 mod metadata_provider;
-mod models;
 mod proxy;
 mod cache_client;
 mod config;
@@ -26,7 +25,7 @@ use youtube::{ download_youtube_audio, extract_video_id };
 use itunes::ItunesProvider;
 use tagger::{ write_metadata, rename_audio_file };
 use metadata_provider::MetadataProvider;
-use models::{ DownloadEvent, Metadata };
+use shared::models::{ DownloadEvent, Metadata };
 use cache_client::{ try_download_from_cache, claim_id, upload_to_cache, get_cached_metadata };
 
 #[tokio::main]

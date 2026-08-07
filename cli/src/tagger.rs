@@ -5,7 +5,7 @@ use lofty::config::WriteOptions;
 use lofty::picture::{ MimeType, Picture, PictureType };
 use anyhow::Context;
 use tokio::io::AsyncWriteExt;
-use crate::models::Metadata;
+use shared::models::Metadata;
 
 pub async fn write_metadata(metadata: &Metadata, path: &Path) -> anyhow::Result<()> {
     let cover_art_path = if metadata.artwork_url == "default_cover_art.jpg" {

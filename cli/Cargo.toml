@@ -9,6 +9,7 @@ name = "cache_server"
 path = "src/bin/cache_server.rs"
 
 [dependencies]
+shared = {path = "../shared"}
 anyhow = "1.0.103"
 axum = { version = "0.8.9", features = ["multipart"] }
 chrono = "0.4.45"

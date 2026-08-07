@@ -2,7 +2,7 @@ use anyhow::Context;
 use std::path::Path;
 use tokio::io::AsyncWriteExt;
 use std::collections::HashMap;
-use crate::models::Metadata;
+use shared::models::Metadata;
 
 pub async fn append_to_history(meta: &Metadata, path: Option<&Path>) -> anyhow::Result<()> {
     let path = path.unwrap_or_else(|| Path::new("./history.ndjson"));
@@ -111,7 +111,6 @@ pub async fn get_history_prompt(path: Option<&Path>) -> anyhow::Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::Metadata;
     use std::fs;
 
     fn make_test_metadata(artist: &str, track: &str) -> Metadata {

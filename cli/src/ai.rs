@@ -8,7 +8,7 @@ use std::io::{ self, Write };
 use tokio::io::{ AsyncBufReadExt, BufReader };
 use termimad::print_text;
 use std::path::PathBuf;
-use crate::models::YTSearchResult;
+use shared::models::YTSearchResult;
 use crate::history;
 use crate::youtube;
 

@@ -5,7 +5,7 @@ use tokio::sync::{ mpsc, oneshot };
 use std::process::Stdio;
 use tokio::io::{ BufReader, AsyncBufReadExt };
 use regex::Regex;
-use crate::models::{ AudioDownload, DownloadEvent, DownloadEventStream, YTSearchResult };
+use shared::models::{ AudioDownload, DownloadEvent, DownloadEventStream, YTSearchResult };
 
 pub fn download_youtube_audio(
     url: String,

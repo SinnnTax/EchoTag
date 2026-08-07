@@ -3,7 +3,7 @@ use std::path::{ Path, PathBuf };
 use tokio::io::AsyncWriteExt;
 use futures_util::StreamExt;
 use reqwest::StatusCode;
-use crate::models::Metadata;
+use shared::models::Metadata;
 
 fn get_server_url() -> anyhow::Result<String> {
     dotenvy

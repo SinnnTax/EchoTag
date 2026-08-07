@@ -1,4 +1,4 @@
-use crate::models::{ Metadata, AudioDownload };
+use shared::models::{ Metadata, AudioDownload };
 
 pub trait MetadataProvider {
     async fn search(&self, query: &str) -> anyhow::Result<Vec<Metadata>>;
