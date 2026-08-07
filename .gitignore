@@ -46,3 +46,4 @@ desktop/src-tauri/gen/schemas/
 !desktop/src-tauri/capabilities/*.json
 !desktop/src-tauri/icons/*
 !desktop/src/assets/*
+!default_cover_art.jpg
