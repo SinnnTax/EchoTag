@@ -1,6 +1,6 @@
 use anyhow::Context;
 use std::path::Path;
-use tokio::io::AsyncWriteExt;
+use tokio::io::{ AsyncBufReadExt, AsyncWriteExt, BufReader };
 use std::collections::HashMap;
 use shared::models::Metadata;
 
@@ -8,9 +8,10 @@ pub async fn append_to_history(meta: &Metadata, path: Option<&Path>) -> anyhow::
     let path = path.unwrap_or_else(|| Path::new("./history.ndjson"));
 
     if path.exists() {
-        if let Ok(content) = tokio::fs::read_to_string(path).await {
-            for line in content.lines() {
-                if let Ok(existing) = serde_json::from_str::<Metadata>(line) {
+        if let Ok(file) = tokio::fs::File::open(path).await {
+            let mut reader = BufReader::new(file).lines();
+            while let Ok(Some(line)) = reader.next_line().await {
+                if let Ok(existing) = serde_json::from_str::<Metadata>(&line) {
                     if
                         existing.track_name == meta.track_name &&
                         existing.artist_name == meta.artist_name
@@ -48,20 +49,21 @@ pub async fn get_history_prompt(path: Option<&Path>) -> anyhow::Result<String> {
         );
     }
 
-    let content = tokio::fs::read_to_string(path).await?;
+    let file = tokio::fs::File::open(path).await?;
+    let mut reader = BufReader::new(file).lines();
 
     let mut artist_counts: HashMap<String, u32> = HashMap::new();
     let mut all_tracks: Vec<String> = Vec::new();
 
-    for line in content.lines() {
-        if let Ok(meta) = serde_json::from_str::<Metadata>(line) {
+    while let Ok(Some(line)) = reader.next_line().await {
+        if let Ok(meta) = serde_json::from_str::<Metadata>(&line) {
             *artist_counts.entry(meta.artist_name.clone()).or_insert(0) += 1;
             all_tracks.push(format!("{} - {}", meta.artist_name, meta.track_name));
         }
     }
 
     let mut top_artists: Vec<(String, u32)> = artist_counts.into_iter().collect();
-    top_artists.sort_by(|a, b| b.1.cmp(&a.1)); // Sort descending by count
+    top_artists.sort_by(|a, b| b.1.cmp(&a.1));
 
     let num_artists = top_artists.len();
     let top_artists_str = top_artists
