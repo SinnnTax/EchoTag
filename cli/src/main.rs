@@ -33,7 +33,7 @@ async fn main() -> anyhow::Result<()> {
     let cli = cli::Cli::parse();
 
     match cli.command {
-        cli::Command::Download { urls, cookies } => {
+        cli::Command::Download { urls, cookies, skip_metadata_verification } => {
             let mut set: JoinSet<anyhow::Result<()>> = JoinSet::new();
 
             let mp = MultiProgress::new();
@@ -262,7 +262,7 @@ async fn main() -> anyhow::Result<()> {
                         results.remove(0)
                     };
 
-                    let mut metadata_verified = false;
+                    let mut metadata_verified = skip_metadata_verification;
                     let mut input;
 
                     while !metadata_verified {

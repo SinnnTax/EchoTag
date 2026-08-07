@@ -20,6 +20,10 @@ pub enum Command {
         /// Path to youtube cookies.txt file
         #[arg(short, long)]
         cookies: PathBuf,
+
+        /// Skips metadata verification
+        #[arg(short, long)]
+        skip_metadata_verification: bool,
     },
     /// Update tags for existing audio files
     Update {
@@ -59,10 +63,11 @@ mod tests {
         let cli = Cli::try_parse_from(args).expect("Parsing valid download command should succeed");
 
         match cli.command {
-            Command::Download { urls, cookies } => {
+            Command::Download { urls, cookies, skip_metadata_verification } => {
                 assert_eq!(urls.len(), 2, "Should have parsed 2 URLs");
                 assert_eq!(urls[0], "https://youtube.com/watch?v=123");
                 assert_eq!(cookies, PathBuf::from("cookies.txt"));
+                assert!(!skip_metadata_verification);
             }
             _ => panic!("Expected Download command, got something else"),
         }
