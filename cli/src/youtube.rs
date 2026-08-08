@@ -53,6 +53,8 @@ async fn download(
         "1",
         "--socket-timeout",
         "3",
+        "--progress-template",
+        "download:[download] %(progress._percent_str)s of ~%(progress._total_bytes_estimate_str)s at %(progress._speed_str)s ETA %(progress._eta_str)s",
         "--print",
         "%(channel)s",
         "--print",
@@ -88,7 +90,7 @@ async fn download(
     });
 
     let progress_re = Regex::new(
-        r"\[download\]\s+([\d.]+)%\s+of\s+~?([\d.]+\w+)\s+at\s+([\d.]+\w+/s)\s+ETA\s+(\d{2}:\d{2})"
+        r"\[download\]\s+([\d.]+)%\s+of\s+~\s*([\d.]+(?:[KMGT]?i?B))\s+at\s+([\d.]+(?:[KMGT]?i?B)/s)\s+ETA\s+(Unknown|\d{2}:\d{2})"
     )?;
 
     let mut channel = String::new();

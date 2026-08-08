@@ -436,7 +436,7 @@ async fn main() -> anyhow::Result<()> {
                 let path = entry.path();
                 let ext = path.extension().and_then(|e| e.to_str());
 
-                if ext == Some("part") || ext == Some("webm") {
+                if ext == Some("part") || ext == Some("webm") || ext == Some("ytdl") {
                     if tokio::fs::remove_file(&path).await.is_ok() {
                         println!("Cleaned up partial file: {}", path.display());
                     }
