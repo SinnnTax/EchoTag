@@ -5,6 +5,10 @@ use futures_util::StreamExt;
 use reqwest::StatusCode;
 use shared::models::Metadata;
 
+fn build_client() -> reqwest::Client {
+    reqwest::Client::builder().no_proxy().build().expect("Failed to build HTTP client")
+}
+
 fn get_server_url() -> anyhow::Result<String> {
     dotenvy
         ::dotenv()
@@ -25,7 +29,7 @@ pub async fn try_download_from_cache(
 ) -> anyhow::Result<Option<PathBuf>> {
     let url = format!("{}/cache/{}", get_server_url()?, video_id);
 
-    let response = reqwest::get(&url).await?;
+    let response = build_client().get(&url).send().await?;
 
     if response.status() == StatusCode::NOT_FOUND {
         return Ok(None);
@@ -100,8 +104,7 @@ pub async fn upload_to_cache(
             reqwest::multipart::Part::text(metadata_json).mime_str("application/json")?
         );
 
-    let client = reqwest::Client::new();
-    let response = client.post(&url).multipart(form).send().await?;
+    let response = build_client().post(&url).multipart(form).send().await?;
 
     if !response.status().is_success() {
         bail!("{}", response.status());
@@ -113,7 +116,7 @@ pub async fn upload_to_cache(
 pub async fn get_cached_metadata(video_id: &str) -> anyhow::Result<Option<Metadata>> {
     let url = format!("{}/cache/{}/metadata", get_server_url()?, video_id);
 
-    let response = reqwest::get(&url).await?;
+    let response = build_client().get(&url).send().await?;
 
     if response.status() == StatusCode::NOT_FOUND {
         return Ok(None);
